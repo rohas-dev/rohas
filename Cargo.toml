@@ -1,0 +1,105 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/rohas-parser",
+    "crates/rohas-codegen",
+    "crates/rohas-runtime",
+    "crates/rohas-engine",
+    "crates/rohas-cron",
+    "crates/rohas-cli",
+    "crates/rohas-dev-server",
+    "crates/rohas-adapters/adapter-memory",
+    "crates/rohas-adapters/adapter-nats",
+    "crates/rohas-adapters/adapter-kafka",
+    "crates/rohas-adapters/adapter-rabbitmq",
+    "crates/rohas-adapters/adapter-sqs",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["Rohas Contributors"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/rohas-dev/rohas.git"
+
+[workspace.dependencies]
+# Async runtime
+tokio = { version = "1.35", features = ["full"] }
+tokio-util = "0.7"
+futures = "0.3"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+toml = "0.9.8"
+
+# Error handling
+anyhow = "1.0"
+thiserror = "2.0.17"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# CLI
+clap = { version = "4.4", features = ["derive", "cargo"] }
+
+# Parsing
+nom = "8.0.0"
+pest = "2.7"
+pest_derive = "2.7"
+
+# Code generation
+handlebars = "6.3.2"
+tera = "1.19"
+
+# Cron
+cron = "0.15.0"
+chrono = { version = "0.4", features = ["serde"] }
+
+# HTTP / Web
+axum = "0.8.7"
+hyper = "1.8.1"
+tower = "0.5.2"
+tower-http = { version = "0.6.6", features = ["trace", "cors"] }
+
+# Messaging adapters
+async-nats = "0.45.0"
+rdkafka = { version = "0.38.0", features = ["cmake-build"] }
+lapin = "3.7.2"
+aws-sdk-sqs = "1.9"
+
+# Watching / Hot reload
+notify = "8.2.0"
+notify-debouncer-full = "0.6.0"
+
+# UUID
+uuid = { version = "1.6", features = ["v4", "serde"] }
+
+# Testing
+mockall = "0.14.0"
+proptest = "1.4"
+
+# Internal workspace crates
+rohas-parser = { path = "crates/rohas-parser" }
+rohas-codegen = { path = "crates/rohas-codegen" }
+rohas-runtime = { path = "crates/rohas-runtime" }
+rohas-engine = { path = "crates/rohas-engine" }
+rohas-cron = { path = "crates/rohas-cron" }
+rohas-cli = { path = "crates/rohas-cli" }
+rohas-dev-server = { path = "crates/rohas-dev-server" }
+adapter-memory = { path = "crates/rohas-adapters/adapter-memory" }
+adapter-nats = { path = "crates/rohas-adapters/adapter-nats" }
+adapter-kafka = { path = "crates/rohas-adapters/adapter-kafka" }
+adapter-rabbitmq = { path = "crates/rohas-adapters/adapter-rabbitmq" }
+adapter-sqs = { path = "crates/rohas-adapters/adapter-sqs" }
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true
+
+[profile.dev]
+opt-level = 0
+debug = true
