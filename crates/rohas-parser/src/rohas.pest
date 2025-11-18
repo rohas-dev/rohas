@@ -1,0 +1,62 @@
+// Rohas Schema Grammar
+
+WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
+COMMENT    = _{ "//" ~ (!"\n" ~ ANY)* ~ "\n" | "/*" ~ (!"*/" ~ ANY)* ~ "*/" }
+
+// Top-level schema
+schema = { SOI ~ (model | api | event | cron | input)* ~ EOI }
+
+// Identifiers and literals
+ident   = @{ ASCII_ALPHA ~ (ASCII_ALPHANUMERIC | "_")* }
+string  = @{ "\"" ~ (!"\"" ~ ANY)* ~ "\"" }
+number  = @{ "-"? ~ ASCII_DIGIT+ }
+boolean = @{ "true" | "false" }
+
+// Model definition
+model = { "model" ~ ident ~ "{" ~ field* ~ "}" }
+
+field        = { ident ~ field_type ~ optional? ~ attribute* }
+field_type   = { ident ~ array_suffix? }
+array_suffix = { "[]" }
+optional     = { "?" }
+
+// Attributes
+attribute     = { "@" ~ ident ~ attr_args? }
+attr_args     = { "(" ~ attr_arg_list? ~ ")" }
+attr_arg_list = { attr_arg ~ ("," ~ attr_arg)* }
+attr_arg      = { ident | string | number | boolean }
+
+// API definition
+api          = { "api" ~ ident ~ "{" ~ api_property* ~ "}" }
+api_property = {
+    ("method:" ~ http_method)
+  | ("path:" ~ string)
+  | ("body:" ~ ident)
+  | ("response:" ~ ident)
+  | ("triggers:" ~ trigger_list)
+  | ("middlewares:" ~ string_list)
+}
+
+http_method  = { "GET" | "POST" | "PUT" | "PATCH" | "DELETE" }
+trigger_list = { "[" ~ ident ~ ("," ~ ident)* ~ "]" }
+string_list  = { "[" ~ string ~ ("," ~ string)* ~ "]" }
+
+// Event definition
+event          = { "event" ~ ident ~ "{" ~ event_property* ~ "}" }
+event_property = {
+    ("payload:" ~ ident)
+  | ("handler:" ~ handler_list)
+  | ("triggers:" ~ trigger_list)
+}
+handler_list   = { "[" ~ ident ~ ("," ~ ident)* ~ "]" }
+
+// Cron definition
+cron          = { "cron" ~ ident ~ "{" ~ cron_property* ~ "}" }
+cron_property = {
+    ("schedule:" ~ string)
+  | ("triggers:" ~ trigger_list)
+}
+
+// Input definition (DTO)
+input       = { "input" ~ ident ~ "{" ~ input_field* ~ "}" }
+input_field = { ident ~ ":" ~ field_type ~ optional? }
