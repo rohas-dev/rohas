@@ -1,0 +1,29 @@
+[package]
+name = "rohas-engine"
+version = { workspace = true }
+edition = { workspace = true }
+authors = { workspace = true }
+license = { workspace = true }
+
+[dependencies]
+rohas-parser = { workspace = true }
+rohas-runtime = { workspace = true }
+rohas-cron = { workspace = true }
+rohas-codegen = { workspace = true }
+adapter-memory = { workspace = true }
+
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+toml = "0.9.8"
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+axum = { workspace = true }
+tower = { workspace = true }
+tower-http = { workspace = true }
+hyper = { workspace = true }
+
+[dev-dependencies]
+tokio-test = "0.4"
+
