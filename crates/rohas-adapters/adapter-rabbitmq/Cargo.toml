@@ -1,0 +1,16 @@
+[package]
+name = "adapter-rabbitmq"
+version = { workspace = true }
+edition = { workspace = true }
+authors = { workspace = true }
+license = { workspace = true }
+
+[dependencies]
+tokio = { workspace = true }
+lapin = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+async-trait = "0.1"
+tracing = { workspace = true }
+

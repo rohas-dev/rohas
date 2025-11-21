@@ -1,0 +1,16 @@
+[package]
+name = "adapter-sqs"
+version = { workspace = true }
+edition = { workspace = true }
+authors = { workspace = true }
+license = { workspace = true }
+
+[dependencies]
+tokio = { workspace = true }
+aws-sdk-sqs = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+async-trait = "0.1"
+tracing = { workspace = true }
+
