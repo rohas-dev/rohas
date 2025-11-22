@@ -1,0 +1,20 @@
+[package]
+name = "rohas-dev-server"
+version = { workspace = true }
+edition = { workspace = true }
+authors = { workspace = true }
+license = { workspace = true }
+
+[dependencies]
+rohas-parser = { workspace = true }
+rohas-engine = { workspace = true }
+
+tokio = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+notify = { workspace = true }
+notify-debouncer-full = { workspace = true }
+
+[dev-dependencies]
+tokio-test = "0.4"
+
