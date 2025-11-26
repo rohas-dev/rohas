@@ -48,6 +48,16 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: Install Homebrew Python (macOS)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          brew update
+          brew install python@3.12
+          PY_PREFIX="$(brew --prefix python@3.12)"
+          echo "PYO3_PYTHON=${PY_PREFIX}/bin/python3.12" >> $GITHUB_ENV
+          echo "MACOS_PYTHON_FRAMEWORK=${PY_PREFIX}/Frameworks/Python.framework/Versions/3.12/Python" >> $GITHUB_ENV
+
       - name: Install cross-compilation dependencies (Linux ARM64)
         if: matrix.target == 'aarch64-unknown-linux-gnu' && matrix.os != 'ubuntu-24.04-arm'
         run: |
@@ -115,7 +125,26 @@ jobs:
         env:
           OPENSSL_STATIC: 1
           OPENSSL_VENDORED: 1
+          PYO3_PYTHON: ${{ env.PYO3_PYTHON }}
         run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Align macOS Python framework path
+        if: runner.os == 'macOS'
+        run: |
+          BINARY="target/${{ matrix.target }}/release/rohas"
+          if [ -f "$BINARY" ]; then
+            OLD_PATH="/Library/Frameworks/Python.framework/Versions/3.12/Python"
+            NEW_PATH="${MACOS_PYTHON_FRAMEWORK:-}"
+            if [ -z "$NEW_PATH" ] || [ ! -f "$NEW_PATH" ]; then
+              echo "macOS Python framework not found at $NEW_PATH"
+              exit 1
+            fi
+            install_name_tool -change "$OLD_PATH" "$NEW_PATH" "$BINARY"
+            install_name_tool -add_rpath "$(dirname "$(dirname "$NEW_PATH")")" "$BINARY" || true
+          else
+            echo "Binary not found at $BINARY"
+            exit 1
+          fi
 
       - name: Import Apple Code Signing Certificate
         if: runner.os == 'macOS'
