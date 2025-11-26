@@ -53,7 +53,7 @@ jobs:
         shell: bash
         run: |
           brew update
-          brew install python@3.12
+          brew install python@3.12 || brew upgrade python@3.12
           PY_PREFIX="$(brew --prefix python@3.12)"
           echo "PYO3_PYTHON=${PY_PREFIX}/bin/python3.12" >> $GITHUB_ENV
           echo "MACOS_PYTHON_FRAMEWORK=${PY_PREFIX}/Frameworks/Python.framework/Versions/3.12/Python" >> $GITHUB_ENV
