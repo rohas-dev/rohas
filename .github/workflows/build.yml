@@ -49,9 +49,10 @@ jobs:
         if: matrix.target == 'aarch64-unknown-linux-gnu'
         run: |
           sudo apt-get update
-          sudo apt-get install -y gcc-aarch64-linux-gnu libc6-dev-arm64-cross pkg-config
+          sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu libc6-dev-arm64-cross pkg-config cmake
           rustup target add aarch64-unknown-linux-gnu
           echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
+          echo "CXX_aarch64-unknown-linux-gnu=aarch64-linux-gnu-g++" >> $GITHUB_ENV
 
       - name: Install build dependencies (for vendored OpenSSL)
         if: runner.os == 'Linux'
