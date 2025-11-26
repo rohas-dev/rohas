@@ -2,6 +2,7 @@ use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
 mod commands;
+mod utils;
 
 #[derive(Parser)]
 #[command(name = "rohas")]
@@ -40,7 +41,7 @@ enum Commands {
     },
 
     Dev {
-        #[arg(short, long, default_value = "schema/index.roh")]
+        #[arg(short, long, default_value = "schema")]
         schema: PathBuf,
 
         #[arg(short, long, default_value = "3000")]
@@ -51,12 +52,12 @@ enum Commands {
     },
 
     ListHandlers {
-        #[arg(default_value = "schema/index.roh")]
+        #[arg(default_value = "schema")]
         schema: PathBuf,
     },
 
     ListEvents {
-        #[arg(default_value = "schema/index.roh")]
+        #[arg(default_value = "schema")]
         schema: PathBuf,
     },
 

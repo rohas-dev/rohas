@@ -56,4 +56,5 @@ mod tests {
         assert_eq!(to_kebab_case("HelloWorld"), "hello-world");
         assert_eq!(to_kebab_case("UserCreated"), "user-created");
     }
+
 }

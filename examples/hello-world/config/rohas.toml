@@ -1,0 +1,13 @@
+[project]
+name = "hello-world"
+version = "0.1.0"
+language = "python"
+
+[server]
+host = "127.0.0.1"
+port = 3000
+enable_cors = true
+
+[adapter]
+type = "memory"
+buffer_size = 1000

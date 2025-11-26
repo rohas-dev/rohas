@@ -1,3 +1,4 @@
+use crate::utils::file_util::parse_directory;
 use anyhow::Result;
 use rohas_parser::Parser;
 use std::path::PathBuf;
@@ -8,9 +9,10 @@ pub async fn execute(schema_path: PathBuf) -> Result<()> {
 
     let schema = if schema_path.is_file() {
         Parser::parse_file(&schema_path)?
+    } else if schema_path.is_dir() {
+        parse_directory(&schema_path)?
     } else {
-        let index_path = schema_path.join("index.roh");
-        Parser::parse_file(&index_path)?
+        anyhow::bail!("Schema path not found: {}", schema_path.display());
     };
 
     schema.validate()?;

@@ -1,9 +1,18 @@
 use anyhow::Result;
 use rohas_codegen::{generate, Language};
-use rohas_parser::{Parser, Schema};
-use std::fs;
+use rohas_engine::config::{EngineConfig, Language as EngineLanguage};
+use rohas_parser::Parser;
 use std::path::PathBuf;
 use tracing::info;
+
+use crate::utils::file_util::{find_config_file, parse_directory};
+
+fn engine_language_to_codegen_language(lang: EngineLanguage) -> Language {
+    match lang {
+        EngineLanguage::TypeScript => Language::TypeScript,
+        EngineLanguage::Python => Language::Python,
+    }
+}
 
 pub async fn execute(
     schema_path: PathBuf,
@@ -15,7 +24,26 @@ pub async fn execute(
     let language = match lang.as_deref() {
         Some("typescript") | Some("ts") => Language::TypeScript,
         Some("python") | Some("py") => Language::Python,
-        None => Language::TypeScript,
+        None => {
+            match find_config_file(&std::env::current_dir().unwrap_or_default()) {
+                Some(config_path) => {
+                    match EngineConfig::from_file(&config_path) {
+                        Ok(config) => {
+                            info!("Using language from config: {:?}", config.language);
+                            engine_language_to_codegen_language(config.language)
+                        }
+                        Err(e) => {
+                            info!("Could not parse config file, defaulting to TypeScript: {}", e);
+                            Language::TypeScript
+                        }
+                    }
+                }
+                None => {
+                    info!("Config file not found, defaulting to TypeScript");
+                    Language::TypeScript
+                }
+            }
+        } 
         Some(other) => {
             anyhow::bail!("Unsupported language: {}", other);
         }
@@ -41,64 +69,6 @@ pub async fn execute(
 
     info!("✓ Code generation completed successfully!");
     info!("  Output directory: {}", output_path.display());
-
-    Ok(())
-}
-
-fn parse_directory(dir: &PathBuf) -> Result<Schema> {
-    let mut combined_schema = Schema::new();
-    let mut file_count = 0;
-
-    visit_roh_files(dir, &mut |path| {
-        info!("Parsing: {}", path.display());
-        match Parser::parse_file(path) {
-            Ok(schema) => {
-                // Merge schemas
-                combined_schema.models.extend(schema.models);
-                combined_schema.inputs.extend(schema.inputs);
-                combined_schema.apis.extend(schema.apis);
-                combined_schema.events.extend(schema.events);
-                combined_schema.crons.extend(schema.crons);
-                file_count += 1;
-                Ok(())
-            }
-            Err(e) => Err(anyhow::anyhow!("Failed to parse {}: {}", path.display(), e)),
-        }
-    })?;
-
-    if file_count == 0 {
-        anyhow::bail!("No .roh files found in {}", dir.display());
-    }
-
-    info!("Parsed {} schema files", file_count);
-
-    combined_schema
-        .validate()
-        .map_err(|e| anyhow::anyhow!("Schema validation failed: {}", e))?;
-
-    Ok(combined_schema)
-}
-
-fn visit_roh_files<F>(dir: &PathBuf, callback: &mut F) -> Result<()>
-where
-    F: FnMut(&PathBuf) -> Result<()>,
-{
-    if !dir.is_dir() {
-        return Ok(());
-    }
-
-    let entries = fs::read_dir(dir)?;
-
-    for entry in entries {
-        let entry = entry?;
-        let path = entry.path();
-
-        if path.is_dir() {
-            visit_roh_files(&path, callback)?;
-        } else if path.extension().and_then(|s| s.to_str()) == Some("roh") {
-            callback(&path)?;
-        }
-    }
 
     Ok(())
 }
