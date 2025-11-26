@@ -18,12 +18,13 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: macos-latest
-            target: aarch64-apple-darwin
-            artifact_name: rohas-macos-arm64
-          - os: macos-13
-            target: x86_64-apple-darwin
-            artifact_name: rohas-macos-x86_64
+          # macOS builds are commented out - users can build from source using build.sh
+          # - os: macos-latest
+          #   target: aarch64-apple-darwin
+          #   artifact_name: rohas-macos-arm64
+          # - os: macos-latest
+          #   target: x86_64-apple-darwin
+          #   artifact_name: rohas-macos-x86_64
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             artifact_name: rohas-windows-x86_64
@@ -47,16 +48,6 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-
-      - name: Install Homebrew Python (macOS)
-        if: runner.os == 'macOS'
-        shell: bash
-        run: |
-          brew update
-          brew install python@3.12 || brew upgrade python@3.12
-          PY_PREFIX="$(brew --prefix python@3.12)"
-          echo "PYO3_PYTHON=${PY_PREFIX}/bin/python3.12" >> $GITHUB_ENV
-          echo "MACOS_PYTHON_FRAMEWORK=${PY_PREFIX}/Frameworks/Python.framework/Versions/3.12/Python" >> $GITHUB_ENV
 
       - name: Install cross-compilation dependencies (Linux ARM64)
         if: matrix.target == 'aarch64-unknown-linux-gnu' && matrix.os != 'ubuntu-24.04-arm'
@@ -127,120 +118,103 @@ jobs:
           OPENSSL_VENDORED: 1
         run: cargo build --release --target ${{ matrix.target }}
 
-      - name: Align macOS Python framework path
-        if: runner.os == 'macOS'
-        run: |
-          BINARY="target/${{ matrix.target }}/release/rohas"
-          if [ -f "$BINARY" ]; then
-            OLD_PATH="/Library/Frameworks/Python.framework/Versions/3.12/Python"
-            NEW_PATH="${MACOS_PYTHON_FRAMEWORK:-}"
-            if [ -z "$NEW_PATH" ] || [ ! -f "$NEW_PATH" ]; then
-              echo "macOS Python framework not found at $NEW_PATH"
-              exit 1
-            fi
-            install_name_tool -change "$OLD_PATH" "$NEW_PATH" "$BINARY"
-            install_name_tool -add_rpath "$(dirname "$(dirname "$NEW_PATH")")" "$BINARY" || true
-          else
-            echo "Binary not found at $BINARY"
-            exit 1
-          fi
-
-      - name: Import Apple Code Signing Certificate
-        if: runner.os == 'macOS'
-        uses: apple-actions/import-codesign-certs@v2
-        with:
-          p12-file-base64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
-          p12-password: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-
-      - name: Code Sign macOS Binary
-        if: runner.os == 'macOS'
-        shell: bash
-        run: |
-          BINARY="target/${{ matrix.target }}/release/rohas"
-          if [ -f "$BINARY" ]; then
-            SIGNING_IDENTITY="${{ secrets.APPLE_SIGNING_IDENTITY }}"
-            if [ -z "$SIGNING_IDENTITY" ]; then
-              echo "Warning: APPLE_SIGNING_IDENTITY not set, skipping code signing"
-            else
-              codesign --force --timestamp --options runtime --sign "$SIGNING_IDENTITY" "$BINARY"
-              codesign --verify --verbose "$BINARY"
-            fi
-          else
-            echo "Binary not found at $BINARY"
-            exit 1
-          fi
-
-      - name: Notarize macOS Binary
-        if: runner.os == 'macOS'
-        shell: bash
-        run: |
-          BINARY="$GITHUB_WORKSPACE/target/${{ matrix.target }}/release/rohas"
-          if [ -f "$BINARY" ]; then
-            APPLE_ID="${{ secrets.APPLE_ID }}"
-            APPLE_TEAM_ID="${{ secrets.APPLE_TEAM_ID }}"
-            APPLE_APP_PASSWORD="${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}"
-            
-            if [ -z "$APPLE_ID" ] || [ -z "$APPLE_TEAM_ID" ] || [ -z "$APPLE_APP_PASSWORD" ]; then
-              echo "Warning: Notarization credentials not set, skipping notarization"
-            else
-              # Create a zip file for notarization (required format)
-              # Use absolute path to avoid any path resolution issues
-              NOTARIZE_ZIP="$GITHUB_WORKSPACE/target/${{ matrix.target }}/release/rohas-notarize.zip"
-              cd "$GITHUB_WORKSPACE/target/${{ matrix.target }}/release"
-              zip -j "rohas-notarize.zip" rohas
-              
-              # Submit for notarization
-              xcrun notarytool submit "$NOTARIZE_ZIP" \
-                --apple-id "$APPLE_ID" \
-                --team-id "$APPLE_TEAM_ID" \
-                --password "$APPLE_APP_PASSWORD" \
-                --wait
-              
-              # Wait a few seconds for the ticket to propagate to Apple's CDN
-              echo "Waiting for notarization ticket to propagate..."
-              sleep 10
-              
-              # Staple the notarization ticket to the binary
-              # Retry stapling a few times as the ticket may take time to propagate
-              MAX_RETRIES=5
-              RETRY_COUNT=0
-              STAPLE_SUCCESS=false
-              
-              while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
-                if xcrun stapler staple "$BINARY" 2>&1; then
-                  STAPLE_SUCCESS=true
-                  echo "Successfully stapled notarization ticket"
-                  break
-                else
-                  RETRY_COUNT=$((RETRY_COUNT + 1))
-                  if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
-                    echo "Stapling failed, retrying in 5 seconds... (attempt $RETRY_COUNT/$MAX_RETRIES)"
-                    sleep 5
-                  fi
-                fi
-              done
-              
-              if [ "$STAPLE_SUCCESS" = false ]; then
-                echo "Warning: Failed to staple notarization ticket after $MAX_RETRIES attempts"
-                echo "The binary is notarized but not stapled. This may cause Gatekeeper warnings on first run."
-                echo "This is non-fatal - the binary will still work, but users may see a warning on first launch."
-              fi
-              
-              # Verify the binary is signed
-              codesign --verify --verbose "$BINARY"
-              
-              # Verify stapling if it succeeded
-              if [ "$STAPLE_SUCCESS" = true ]; then
-                xcrun stapler validate "$BINARY" || echo "Warning: Stapler validation failed, but binary is notarized"
-              fi
-              
-              # Clean up the temporary zip file
-              rm -f "$NOTARIZE_ZIP"
-            fi
-          else
-            echo "Binary not found at $BINARY"
-            exit 1
-          fi
+      # macOS builds are commented out - users can build from source using build.sh
+      # - name: Import Apple Code Signing Certificate
+      #   if: runner.os == 'macOS'
+      #   uses: apple-actions/import-codesign-certs@v2
+      #   with:
+      #     p12-file-base64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+      #     p12-password: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+      #
+      # - name: Code Sign macOS Binary
+      #   if: runner.os == 'macOS'
+      #   shell: bash
+      #   run: |
+      #     BINARY="target/${{ matrix.target }}/release/rohas"
+      #     if [ -f "$BINARY" ]; then
+      #       SIGNING_IDENTITY="${{ secrets.APPLE_SIGNING_IDENTITY }}"
+      #       if [ -z "$SIGNING_IDENTITY" ]; then
+      #         echo "Warning: APPLE_SIGNING_IDENTITY not set, skipping code signing"
+      #       else
+      #         codesign --force --timestamp --options runtime --sign "$SIGNING_IDENTITY" "$BINARY"
+      #         codesign --verify --verbose "$BINARY"
+      #       fi
+      #     else
+      #       echo "Binary not found at $BINARY"
+      #       exit 1
+      #     fi
+      #
+      # - name: Notarize macOS Binary
+      #   if: runner.os == 'macOS'
+      #   shell: bash
+      #   run: |
+      #     BINARY="$GITHUB_WORKSPACE/target/${{ matrix.target }}/release/rohas"
+      #     if [ -f "$BINARY" ]; then
+      #       APPLE_ID="${{ secrets.APPLE_ID }}"
+      #       APPLE_TEAM_ID="${{ secrets.APPLE_TEAM_ID }}"
+      #       APPLE_APP_PASSWORD="${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}"
+      #       
+      #       if [ -z "$APPLE_ID" ] || [ -z "$APPLE_TEAM_ID" ] || [ -z "$APPLE_APP_PASSWORD" ]; then
+      #         echo "Warning: Notarization credentials not set, skipping notarization"
+      #       else
+      #         # Create a zip file for notarization (required format)
+      #         # Use absolute path to avoid any path resolution issues
+      #         NOTARIZE_ZIP="$GITHUB_WORKSPACE/target/${{ matrix.target }}/release/rohas-notarize.zip"
+      #         cd "$GITHUB_WORKSPACE/target/${{ matrix.target }}/release"
+      #         zip -j "rohas-notarize.zip" rohas
+      #         
+      #         # Submit for notarization
+      #         xcrun notarytool submit "$NOTARIZE_ZIP" \
+      #           --apple-id "$APPLE_ID" \
+      #           --team-id "$APPLE_TEAM_ID" \
+      #           --password "$APPLE_APP_PASSWORD" \
+      #           --wait
+      #         
+      #         # Wait a few seconds for the ticket to propagate to Apple's CDN
+      #         echo "Waiting for notarization ticket to propagate..."
+      #         sleep 10
+      #         
+      #         # Staple the notarization ticket to the binary
+      #         # Retry stapling a few times as the ticket may take time to propagate
+      #         MAX_RETRIES=5
+      #         RETRY_COUNT=0
+      #         STAPLE_SUCCESS=false
+      #         
+      #         while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+      #           if xcrun stapler staple "$BINARY" 2>&1; then
+      #             STAPLE_SUCCESS=true
+      #             echo "Successfully stapled notarization ticket"
+      #             break
+      #           else
+      #             RETRY_COUNT=$((RETRY_COUNT + 1))
+      #             if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
+      #               echo "Stapling failed, retrying in 5 seconds... (attempt $RETRY_COUNT/$MAX_RETRIES)"
+      #               sleep 5
+      #             fi
+      #           fi
+      #         done
+      #         
+      #         if [ "$STAPLE_SUCCESS" = false ]; then
+      #           echo "Warning: Failed to staple notarization ticket after $MAX_RETRIES attempts"
+      #           echo "The binary is notarized but not stapled. This may cause Gatekeeper warnings on first run."
+      #           echo "This is non-fatal - the binary will still work, but users may see a warning on first launch."
+      #         fi
+      #         
+      #         # Verify the binary is signed
+      #         codesign --verify --verbose "$BINARY"
+      #         
+      #         # Verify stapling if it succeeded
+      #         if [ "$STAPLE_SUCCESS" = true ]; then
+      #           xcrun stapler validate "$BINARY" || echo "Warning: Stapler validation failed, but binary is notarized"
+      #         fi
+      #         
+      #         # Clean up the temporary zip file
+      #         rm -f "$NOTARIZE_ZIP"
+      #       fi
+      #     else
+      #       echo "Binary not found at $BINARY"
+      #       exit 1
+      #     fi
 
       - name: Prepare artifact (Windows)
         if: runner.os == 'Windows'
@@ -325,15 +299,27 @@ jobs:
             
             ### Downloads
             
-            - **macOS ARM64 (M1)**: `rohas-macos-arm64.tar.gz`
-            - **macOS x86_64**: `rohas-macos-x86_64.tar.gz`
             - **Windows x86_64**: `rohas-windows-x86_64.zip`
             - **Linux x86_64**: `rohas-linux-x86_64.tar.gz`
             - **Linux ARM64**: `rohas-linux-arm64.tar.gz`
             
+            ### Building from Source
+            
+            **macOS and other platforms** can build from source using our build script:
+            ```bash
+            curl -fsSL https://raw.githubusercontent.com/rohas-dev/rohas/main/scripts/build.sh | bash
+            ```
+            
+            Or clone the repository and build manually:
+            ```bash
+            git clone https://github.com/rohas-dev/rohas.git
+            cd rohas
+            cargo build --release
+            ```
+            
             ### Installation
             
-            **macOS/Linux:**
+            **Linux:**
             ```bash
             tar -xzf rohas-<platform>.tar.gz
             sudo mv rohas /usr/local/bin/
