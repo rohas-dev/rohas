@@ -125,7 +125,6 @@ jobs:
         env:
           OPENSSL_STATIC: 1
           OPENSSL_VENDORED: 1
-          PYO3_PYTHON: ${{ env.PYO3_PYTHON }}
         run: cargo build --release --target ${{ matrix.target }}
 
       - name: Align macOS Python framework path
