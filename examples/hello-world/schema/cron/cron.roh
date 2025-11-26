@@ -1,0 +1,3 @@
+cron DailyCleanup {
+  schedule: "*/2 * * * * *"
+}

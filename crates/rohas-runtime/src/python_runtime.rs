@@ -101,14 +101,25 @@ impl PythonRuntime {
             RuntimeError::HandlerNotFound(format!("Function '{}' not found: {}", function_name, e))
         })?;
 
-        let request_dict = Self::build_request_dict(py, context)?;
+        let inspect = py.import("inspect")?;
+        let sig = inspect.call_method1("signature", (handler_fn.as_any(),))?;
+        let params = sig.getattr("parameters")?;
+        let param_count = params.call_method0("__len__")?.extract::<usize>()?;
 
-        let request_obj = Self::instantiate_request_class(py, handler_name, &request_dict)
-            .unwrap_or_else(|_| request_dict.clone().into_any());
+        let result = if param_count == 0 {
+            handler_fn
+                .call0()
+                .map_err(|e| RuntimeError::ExecutionFailed(format!("Handler call failed: {}", e)))?
+        } else {
+            let request_dict = Self::build_request_dict(py, context)?;
 
-        let result = handler_fn
-            .call1((request_obj,))
-            .map_err(|e| RuntimeError::ExecutionFailed(format!("Handler call failed: {}", e)))?;
+            let request_obj = Self::instantiate_request_class(py, handler_name, &request_dict)
+                .unwrap_or_else(|_| request_dict.clone().into_any());
+
+            handler_fn
+                .call1((request_obj,))
+                .map_err(|e| RuntimeError::ExecutionFailed(format!("Handler call failed: {}", e)))?
+        };
 
         let final_result = if Self::is_coroutine(py, &result)? {
             debug!("Handler is async, awaiting coroutine");

@@ -3311,6 +3311,7 @@ dependencies = [
  "chrono",
  "once_cell",
  "pyo3",
+ "rohas-codegen",
  "serde",
  "serde_json",
  "thiserror 2.0.17",

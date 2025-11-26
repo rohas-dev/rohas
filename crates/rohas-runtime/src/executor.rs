@@ -6,9 +6,10 @@ use crate::{Language, RuntimeConfig};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
+use rohas_codegen::templates;
 use tokio::sync::RwLock;
 use tracing::{debug, info};
-
+ 
 pub struct Executor {
     config: RuntimeConfig,
     handlers: Arc<RwLock<HashMap<String, Arc<dyn Handler>>>>,
@@ -97,6 +98,8 @@ impl Executor {
     fn resolve_handler_path(&self, handler_name: &str) -> Result<PathBuf> {
         let handlers_dir = self.config.project_root.join("src/handlers");
 
+        let snake_case_name = templates::to_snake_case(handler_name);
+
         let possible_paths = [
             handlers_dir.join(format!(
                 "api/{}.{}",
@@ -106,6 +109,11 @@ impl Executor {
             handlers_dir.join(format!(
                 "events/{}.{}",
                 handler_name,
+                self.config.language.file_extension()
+            )),
+            handlers_dir.join(format!(
+                "cron/{}.{}",
+                snake_case_name,
                 self.config.language.file_extension()
             )),
             handlers_dir.join(format!(
