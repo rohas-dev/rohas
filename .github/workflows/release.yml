@@ -30,7 +30,7 @@ jobs:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             artifact_name: rohas-linux-x86_64
-          - os: ubuntu-latest
+          - os: ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
             artifact_name: rohas-linux-arm64
 
@@ -43,13 +43,36 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
+      - name: Install Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
       - name: Install cross-compilation dependencies (Linux ARM64)
-        if: matrix.target == 'aarch64-unknown-linux-gnu'
+        if: matrix.target == 'aarch64-unknown-linux-gnu' && matrix.os != 'ubuntu-24.04-arm'
         run: |
+          sudo dpkg --add-architecture arm64
           sudo apt-get update
-          sudo apt-get install -y gcc-aarch64-linux-gnu libc6-dev-arm64-cross pkg-config
+          sudo apt-get install -y \
+            gcc-aarch64-linux-gnu \
+            g++-aarch64-linux-gnu \
+            libc6-dev-arm64-cross \
+            pkg-config \
+            cmake \
+            python3.12-dev \
+            libpython3.12-dev:arm64
           rustup target add aarch64-unknown-linux-gnu
           echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
+          echo "CXX_aarch64-unknown-linux-gnu=aarch64-linux-gnu-g++" >> $GITHUB_ENV
+          echo "PYO3_CROSS_PYTHON_VERSION=3.12" >> $GITHUB_ENV
+          echo "PYO3_CROSS_LIB_DIR=/usr/lib/aarch64-linux-gnu" >> $GITHUB_ENV
+          echo "PYO3_CROSS_INCLUDE_DIR=/usr/include/aarch64-linux-gnu/python3.12" >> $GITHUB_ENV
+
+      - name: Install native ARM dependencies
+        if: matrix.target == 'aarch64-unknown-linux-gnu' && matrix.os == 'ubuntu-24.04-arm'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential pkg-config cmake python3.12-dev libpython3.12-dev
 
       - name: Install build dependencies (for vendored OpenSSL)
         if: runner.os == 'Linux'
