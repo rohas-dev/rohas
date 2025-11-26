@@ -1,0 +1,301 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag (e.g., v0.1.0)'
+        required: true
+
+jobs:
+  build-and-release:
+    name: Build and Release
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            artifact_name: rohas-macos-arm64
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            artifact_name: rohas-macos-x86_64
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            artifact_name: rohas-windows-x86_64
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            artifact_name: rohas-linux-x86_64
+          - os: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+            artifact_name: rohas-linux-arm64
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install cross-compilation dependencies (Linux ARM64)
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu libc6-dev-arm64-cross pkg-config
+          rustup target add aarch64-unknown-linux-gnu
+          echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
+
+      - name: Install build dependencies (for vendored OpenSSL)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y make perl
+
+      - name: Get Cargo lock hash
+        id: cargo-lock
+        shell: bash
+        run: |
+          if [ -f "Cargo.lock" ]; then
+            # macOS uses shasum, Linux uses sha256sum, Windows bash has sha256sum
+            if command -v shasum > /dev/null 2>&1; then
+              echo "hash=$(shasum -a 256 Cargo.lock | cut -d' ' -f1)" >> $GITHUB_OUTPUT
+            elif command -v sha256sum > /dev/null 2>&1; then
+              echo "hash=$(sha256sum Cargo.lock | cut -d' ' -f1)" >> $GITHUB_OUTPUT
+            else
+              # Fallback: use git hash-object if available
+              echo "hash=$(git hash-object Cargo.lock)" >> $GITHUB_OUTPUT
+            fi
+          else
+            echo "hash=no-lock" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ matrix.target }}-${{ steps.cargo-lock.outputs.hash }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-${{ matrix.target }}-
+
+      - name: Build
+        env:
+          OPENSSL_STATIC: 1
+          OPENSSL_VENDORED: 1
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Import Apple Code Signing Certificate
+        if: runner.os == 'macOS'
+        uses: apple-actions/import-codesign-certs@v2
+        with:
+          p12-file-base64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+          p12-password: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+
+      - name: Code Sign macOS Binary
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          BINARY="target/${{ matrix.target }}/release/rohas"
+          if [ -f "$BINARY" ]; then
+            SIGNING_IDENTITY="${{ secrets.APPLE_SIGNING_IDENTITY }}"
+            if [ -z "$SIGNING_IDENTITY" ]; then
+              echo "Warning: APPLE_SIGNING_IDENTITY not set, skipping code signing"
+            else
+              codesign --force --timestamp --options runtime --sign "$SIGNING_IDENTITY" "$BINARY"
+              codesign --verify --verbose "$BINARY"
+            fi
+          else
+            echo "Binary not found at $BINARY"
+            exit 1
+          fi
+
+      - name: Notarize macOS Binary
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          BINARY="$GITHUB_WORKSPACE/target/${{ matrix.target }}/release/rohas"
+          if [ -f "$BINARY" ]; then
+            APPLE_ID="${{ secrets.APPLE_ID }}"
+            APPLE_TEAM_ID="${{ secrets.APPLE_TEAM_ID }}"
+            APPLE_APP_PASSWORD="${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}"
+            
+            if [ -z "$APPLE_ID" ] || [ -z "$APPLE_TEAM_ID" ] || [ -z "$APPLE_APP_PASSWORD" ]; then
+              echo "Warning: Notarization credentials not set, skipping notarization"
+            else
+              # Create a zip file for notarization (required format)
+              # Use absolute path to avoid any path resolution issues
+              NOTARIZE_ZIP="$GITHUB_WORKSPACE/target/${{ matrix.target }}/release/rohas-notarize.zip"
+              cd "$GITHUB_WORKSPACE/target/${{ matrix.target }}/release"
+              zip -j "rohas-notarize.zip" rohas
+              
+              # Submit for notarization
+              xcrun notarytool submit "$NOTARIZE_ZIP" \
+                --apple-id "$APPLE_ID" \
+                --team-id "$APPLE_TEAM_ID" \
+                --password "$APPLE_APP_PASSWORD" \
+                --wait
+              
+              # Wait a few seconds for the ticket to propagate to Apple's CDN
+              echo "Waiting for notarization ticket to propagate..."
+              sleep 10
+              
+              # Staple the notarization ticket to the binary
+              # Retry stapling a few times as the ticket may take time to propagate
+              MAX_RETRIES=5
+              RETRY_COUNT=0
+              STAPLE_SUCCESS=false
+              
+              while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+                if xcrun stapler staple "$BINARY" 2>&1; then
+                  STAPLE_SUCCESS=true
+                  echo "Successfully stapled notarization ticket"
+                  break
+                else
+                  RETRY_COUNT=$((RETRY_COUNT + 1))
+                  if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
+                    echo "Stapling failed, retrying in 5 seconds... (attempt $RETRY_COUNT/$MAX_RETRIES)"
+                    sleep 5
+                  fi
+                fi
+              done
+              
+              if [ "$STAPLE_SUCCESS" = false ]; then
+                echo "Warning: Failed to staple notarization ticket after $MAX_RETRIES attempts"
+                echo "The binary is notarized but not stapled. This may cause Gatekeeper warnings on first run."
+                echo "This is non-fatal - the binary will still work, but users may see a warning on first launch."
+              fi
+              
+              # Verify the binary is signed
+              codesign --verify --verbose "$BINARY"
+              
+              # Verify stapling if it succeeded
+              if [ "$STAPLE_SUCCESS" = true ]; then
+                xcrun stapler validate "$BINARY" || echo "Warning: Stapler validation failed, but binary is notarized"
+              fi
+              
+              # Clean up the temporary zip file
+              rm -f "$NOTARIZE_ZIP"
+            fi
+          else
+            echo "Binary not found at $BINARY"
+            exit 1
+          fi
+
+      - name: Prepare artifact (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $binary = "target\${{ matrix.target }}\release\rohas.exe"
+          if (Test-Path $binary) {
+            New-Item -ItemType Directory -Force -Path release | Out-Null
+            Copy-Item $binary "release\rohas.exe"
+            Compress-Archive -Path "release\rohas.exe" -DestinationPath "release\${{ matrix.artifact_name }}.zip" -Force
+            echo "ARTIFACT_PATH=release\${{ matrix.artifact_name }}.zip" | Out-File -FilePath $env:GITHUB_ENV -Append
+            echo "ARTIFACT_NAME=${{ matrix.artifact_name }}.zip" | Out-File -FilePath $env:GITHUB_ENV -Append
+          } else {
+            Write-Error "Binary not found at $binary"
+            exit 1
+          }
+
+      - name: Prepare artifact (Unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          BINARY="target/${{ matrix.target }}/release/rohas"
+          if [ -f "$BINARY" ]; then
+            mkdir -p release
+            cp "$BINARY" "release/rohas"
+            chmod +x "release/rohas"
+            cd release
+            tar czf "${{ matrix.artifact_name }}.tar.gz" rohas
+            cd ..
+            echo "ARTIFACT_PATH=release/${{ matrix.artifact_name }}.tar.gz" >> $GITHUB_ENV
+            echo "ARTIFACT_NAME=${{ matrix.artifact_name }}.tar.gz" >> $GITHUB_ENV
+          else
+            echo "Binary not found at $BINARY"
+            exit 1
+          fi
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: ${{ env.ARTIFACT_PATH }}
+          retention-days: 30
+
+  create-release:
+    name: Create Release
+    needs: build-and-release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Get tag name
+        id: tag
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            echo "tag=${{ github.event.inputs.tag }}" >> $GITHUB_OUTPUT
+          else
+            echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Prepare release assets
+        shell: bash
+        run: |
+          mkdir -p release-assets
+          find artifacts -type f \( -name "*.tar.gz" -o -name "*.zip" \) -exec cp {} release-assets/ \;
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          name: Release ${{ steps.tag.outputs.tag }}
+          body: |
+            ## Release ${{ steps.tag.outputs.tag }}
+            
+            ### Downloads
+            
+            - **macOS ARM64 (M1)**: `rohas-macos-arm64.tar.gz`
+            - **macOS x86_64**: `rohas-macos-x86_64.tar.gz`
+            - **Windows x86_64**: `rohas-windows-x86_64.zip`
+            - **Linux x86_64**: `rohas-linux-x86_64.tar.gz`
+            - **Linux ARM64**: `rohas-linux-arm64.tar.gz`
+            
+            ### Installation
+            
+            **macOS/Linux:**
+            ```bash
+            tar -xzf rohas-<platform>.tar.gz
+            sudo mv rohas /usr/local/bin/
+            ```
+            
+            **Windows:**
+            ```powershell
+            Expand-Archive rohas-windows-x86_64.zip
+            # Add to PATH
+            ```
+          files: release-assets/*
+          draft: false
+          prerelease: ${{ contains(steps.tag.outputs.tag, '-') }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
