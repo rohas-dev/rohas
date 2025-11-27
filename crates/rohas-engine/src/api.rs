@@ -1,10 +1,11 @@
 use axum::{
-    extract::{MatchedPath, Request, State},
+    extract::{MatchedPath, Request, State, ws::WebSocketUpgrade},
     http::StatusCode,
     response::{IntoResponse, Response},
     routing::{delete, get, patch, post, put},
     Json, Router,
 };
+use crate::ws;
 use rohas_codegen::templates;
 use rohas_parser::{HttpMethod, Schema};
 use rohas_runtime::Executor;
@@ -53,6 +54,28 @@ pub fn build_router(
             HttpMethod::PATCH => Router::new().route(&route_path, patch(api_handler)),
             HttpMethod::DELETE => Router::new().route(&route_path, delete(api_handler)),
         };
+
+        router = router.merge(handler_router);
+    }
+ 
+    for ws in &schema.websockets {
+        let route_path = normalize_path(&ws.path);
+        debug!(
+            "Adding websocket route: {} -> handler: {}",
+            route_path,
+            templates::to_snake_case(ws.name.as_str())
+        );
+
+        let ws_name = ws.name.clone();
+        let handler_router = Router::new().route(
+            &route_path,
+            get(move |ws: WebSocketUpgrade, State(state): State<ApiState>| {
+                let ws_name = ws_name.clone();
+                async move {
+                    ws.on_upgrade(move |socket| ws::websocket_handler(socket, state, ws_name))
+                }
+            }),
+        );
 
         router = router.merge(handler_router);
     }

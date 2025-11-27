@@ -125,6 +125,11 @@ impl Executor {
                 self.config.language.file_extension()
             )),
             handlers_dir.join(format!(
+                "websockets/{}.{}",
+                handler_name,
+                self.config.language.file_extension()
+            )),
+            handlers_dir.join(format!(
                 "cron/{}.{}",
                 snake_case_name,
                 self.config.language.file_extension()
