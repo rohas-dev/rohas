@@ -19,12 +19,11 @@ pub fn generate_models(schema: &Schema, output_dir: &Path) -> Result<()> {
 fn generate_model_content(model: &Model) -> String {
     let mut content = String::new();
 
-    content.push_str("from dataclasses import dataclass\n");
+    content.push_str("from pydantic import BaseModel\n");
     content.push_str("from typing import Optional\n");
     content.push_str("from datetime import datetime\n\n");
 
-    content.push_str("@dataclass\n");
-    content.push_str(&format!("class {}:\n", model.name));
+    content.push_str(&format!("class {}(BaseModel):\n", model.name));
 
     for field in &model.fields {
         let py_type = field.field_type.to_python();
@@ -39,6 +38,9 @@ fn generate_model_content(model: &Model) -> String {
     if model.fields.is_empty() {
         content.push_str("    pass\n");
     }
+
+    content.push_str("\n    class Config:\n");
+    content.push_str("        from_attributes = True\n");
 
     content
 }
@@ -115,7 +117,7 @@ fn extract_path_params(path: &str) -> Vec<String> {
 fn generate_api_content(api: &Api) -> String {
     let mut content = String::new();
 
-    content.push_str("from dataclasses import dataclass, field\n");
+    content.push_str("from pydantic import BaseModel\n");
     content.push_str("from typing import Callable, Awaitable, Dict, Optional\n");
 
     let response_field_type = FieldType::from_str(&api.response);
@@ -140,8 +142,7 @@ fn generate_api_content(api: &Api) -> String {
 
     let path_params = extract_path_params(&api.path);
 
-    content.push_str("\n@dataclass\n");
-    content.push_str(&format!("class {}Request:\n", api.name));
+    content.push_str(&format!("\nclass {}Request(BaseModel):\n", api.name));
 
     for param in &path_params {
         content.push_str(&format!("    {}: str\n", param));
@@ -151,15 +152,20 @@ fn generate_api_content(api: &Api) -> String {
         content.push_str(&format!("    body: {}\n", body));
     }
 
-    content.push_str("    query_params: Dict[str, str] = field(default_factory=dict)\n");
+    content.push_str("    query_params: Dict[str, str] = {}\n");
 
     if path_params.is_empty() && api.body.is_none() {
         // We still have query_params, so no pass needed
     }
 
-    content.push_str("\n@dataclass\n");
-    content.push_str(&format!("class {}Response:\n", api.name));
+    content.push_str("\n    class Config:\n");
+    content.push_str("        from_attributes = True\n");
+
+    content.push_str(&format!("\nclass {}Response(BaseModel):\n", api.name));
     content.push_str(&format!("    data: {}\n", response_py_type));
+
+    content.push_str("\n    class Config:\n");
+    content.push_str("        from_attributes = True\n");
 
     content.push_str(&format!(
         "\n{}Handler = Callable[[{}Request], Awaitable[{}Response]]\n",
@@ -219,7 +225,7 @@ pub fn generate_events(schema: &Schema, output_dir: &Path) -> Result<()> {
 fn generate_event_content(event: &Event) -> String {
     let mut content = String::new();
 
-    content.push_str("from dataclasses import dataclass\n");
+    content.push_str("from pydantic import BaseModel\n");
     content.push_str("from datetime import datetime\n");
     content.push_str("from typing import Callable, Awaitable\n");
 
@@ -235,10 +241,12 @@ fn generate_event_content(event: &Event) -> String {
         ));
     }
 
-    content.push_str("\n@dataclass\n");
-    content.push_str(&format!("class {}:\n", event.name));
+    content.push_str(&format!("\nclass {}(BaseModel):\n", event.name));
     content.push_str(&format!("    payload: {}\n", payload_py_type));
     content.push_str("    timestamp: datetime\n\n");
+
+    content.push_str("    class Config:\n");
+    content.push_str("        from_attributes = True\n\n");
 
     content.push_str(&format!(
         "{}Handler = Callable[[{}], Awaitable[None]]\n",

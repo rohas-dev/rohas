@@ -19,6 +19,8 @@ pub fn generate_models(schema: &Schema, output_dir: &Path) -> Result<()> {
 fn generate_model_content(model: &Model) -> String {
     let mut content = String::new();
 
+    content.push_str("import { z } from 'zod';\n\n");
+
     content.push_str(&format!("export interface {} {{\n", model.name));
 
     for field in &model.fields {
@@ -29,50 +31,47 @@ fn generate_model_content(model: &Model) -> String {
 
     content.push_str("}\n\n");
 
+    // Generate zod schema
+    content.push_str(&format!("export const {}Schema = z.object({{\n", model.name));
+    for field in &model.fields {
+        let zod_type = field_type_to_zod(&field.field_type, field.optional);
+        content.push_str(&format!("  {}: {},\n", field.name, zod_type));
+    }
+    content.push_str("});\n\n");
+
     content.push_str(&format!(
         "export function is{}(obj: any): obj is {} {{\n",
         model.name, model.name
     ));
-    content.push_str("  return (\n");
-    content.push_str("    typeof obj === 'object' &&\n");
-
-    for (i, field) in model.fields.iter().enumerate() {
-        let check = generate_type_check(
-            &field.name,
-            &field.field_type.to_typescript(),
-            field.optional,
-        );
-        if i < model.fields.len() - 1 {
-            content.push_str(&format!("    {} &&\n", check));
-        } else {
-            content.push_str(&format!("    {}\n", check));
-        }
-    }
-
-    content.push_str("  );\n");
+    content.push_str(&format!("  return {}Schema.safeParse(obj).success;\n", model.name));
     content.push_str("}\n");
 
     content
 }
 
-fn generate_type_check(field_name: &str, ts_type: &str, optional: bool) -> String {
-    let base_check = match ts_type {
-        "number" => format!("typeof obj.{} === 'number'", field_name),
-        "string" => format!("typeof obj.{} === 'string'", field_name),
-        "boolean" => format!("typeof obj.{} === 'boolean'", field_name),
-        "Date" => format!("obj.{} instanceof Date", field_name),
-        _ if ts_type.ends_with("[]") => {
-            format!("Array.isArray(obj.{})", field_name)
+fn field_type_to_zod(field_type: &rohas_parser::FieldType, optional: bool) -> String {
+    use rohas_parser::FieldType;
+    
+    let zod_type = match field_type {
+        FieldType::Int | FieldType::Float => "z.number()".to_string(),
+        FieldType::String => "z.string()".to_string(),
+        FieldType::Boolean => "z.boolean()".to_string(),
+        FieldType::DateTime => "z.date()".to_string(),
+        FieldType::Json => "z.any()".to_string(),
+        FieldType::Custom(name) => format!("{}Schema", name),
+        FieldType::Array(inner) => {
+            let inner_zod = field_type_to_zod(inner, false);
+            format!("z.array({})", inner_zod)
         }
-        _ => format!("obj.{} !== undefined", field_name),
     };
 
     if optional {
-        format!("(obj.{} === undefined || {})", field_name, base_check)
+        format!("{}.optional()", zod_type)
     } else {
-        base_check
+        zod_type
     }
 }
+
 
 pub fn generate_dtos(schema: &Schema, output_dir: &Path) -> Result<()> {
     let dto_dir = output_dir.join("generated/dto");
@@ -116,6 +115,8 @@ pub fn generate_apis(schema: &Schema, output_dir: &Path) -> Result<()> {
 fn generate_api_content(api: &Api) -> String {
     let mut content = String::new();
 
+    content.push_str("import { z } from 'zod';\n");
+
     let request_type = format!("{}Request", api.name);
     let response_type = format!("{}Response", api.name);
     let handler_type = format!("{}Handler", api.name);
@@ -124,7 +125,8 @@ fn generate_api_content(api: &Api) -> String {
 
     if !response_is_primitive {
         content.push_str(&format!(
-            "import {{ {} }} from '@generated/models/{}';\n",
+            "import {{ {}, {}Schema }} from '@generated/models/{}';\n",
+            api.response,
             api.response,
             templates::to_snake_case(&api.response)
         ));
@@ -135,13 +137,15 @@ fn generate_api_content(api: &Api) -> String {
         if !body_is_primitive {
             if body.ends_with("Input") {
                 content.push_str(&format!(
-                    "import {{ {} }} from '@generated/dto/{}';\n",
+                    "import {{ {}, {}Schema }} from '@generated/dto/{}';\n",
+                    body,
                     body,
                     templates::to_snake_case(body)
                 ));
             } else {
                 content.push_str(&format!(
-                    "import {{ {} }} from '@generated/models/{}';\n",
+                    "import {{ {}, {}Schema }} from '@generated/models/{}';\n",
+                    body,
                     body,
                     templates::to_snake_case(body)
                 ));
@@ -174,6 +178,33 @@ fn generate_api_content(api: &Api) -> String {
 
     content.push_str("}\n\n");
 
+    // Generate zod schema for request
+    content.push_str(&format!("export const {}Schema = z.object({{\n", request_type));
+    for param in &path_params {
+        content.push_str(&format!("  {}: z.string(),\n", param));
+    }
+    if let Some(body) = &api.body {
+        let body_is_primitive = is_primitive_type(body);
+        if body_is_primitive {
+            let zod_type = match body.as_str() {
+                "String" => "z.string()",
+                "Int" | "Float" => "z.number()",
+                "Boolean" => "z.boolean()",
+                "DateTime" | "Date" => "z.date()",
+                _ => "z.any()",
+            };
+            content.push_str(&format!("  body: {},\n", zod_type));
+        } else {
+            if body.ends_with("Input") {
+                content.push_str(&format!("  body: {}Schema,\n", body));
+            } else {
+                content.push_str(&format!("  body: {}Schema,\n", body));
+            }
+        }
+    }
+    content.push_str("  queryParams: z.record(z.string()).optional(),\n");
+    content.push_str("});\n\n");
+
     let response_ts_type = if response_is_primitive {
         primitive_to_typescript(&api.response)
     } else {
@@ -183,6 +214,22 @@ fn generate_api_content(api: &Api) -> String {
     content.push_str(&format!("export interface {} {{\n", response_type));
     content.push_str(&format!("  data: {};\n", response_ts_type));
     content.push_str("}\n\n");
+
+    // Generate zod schema for response
+    let response_zod_type = if response_is_primitive {
+        match api.response.as_str() {
+            "String" => "z.string()".to_string(),
+            "Int" | "Float" => "z.number()".to_string(),
+            "Boolean" => "z.boolean()".to_string(),
+            "DateTime" | "Date" => "z.date()".to_string(),
+            _ => "z.any()".to_string(),
+        }
+    } else {
+        format!("{}Schema", api.response)
+    };
+    content.push_str(&format!("export const {}Schema = z.object({{\n", response_type));
+    content.push_str(&format!("  data: {},\n", response_zod_type));
+    content.push_str("});\n\n");
 
     content.push_str(&format!(
         "export type {} = (req: {}) => Promise<{}>;\n",
@@ -293,8 +340,10 @@ pub fn generate_events(schema: &Schema, output_dir: &Path) -> Result<()> {
 fn generate_event_content(event: &Event) -> String {
     let mut content = String::new();
 
+    content.push_str("import { z } from 'zod';\n");
     content.push_str(&format!(
-        "import {{ {} }} from '@generated/models/{}';\n\n",
+        "import {{ {}, {}Schema }} from '@generated/models/{}';\n\n",
+        event.payload,
         event.payload,
         templates::to_snake_case(&event.payload)
     ));
@@ -303,6 +352,12 @@ fn generate_event_content(event: &Event) -> String {
     content.push_str(&format!("  payload: {};\n", event.payload));
     content.push_str("  timestamp: Date;\n");
     content.push_str("}\n\n");
+
+    // Generate zod schema for event
+    content.push_str(&format!("export const {}Schema = z.object({{\n", event.name));
+    content.push_str(&format!("  payload: {}Schema,\n", event.payload));
+    content.push_str("  timestamp: z.date(),\n");
+    content.push_str("});\n\n");
 
     content.push_str(&format!(
         "export type {}Handler = (event: {}) => Promise<void>;\n",

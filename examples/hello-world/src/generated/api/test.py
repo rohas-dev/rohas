@@ -1,12 +1,16 @@
-from dataclasses import dataclass, field
+from pydantic import BaseModel
 from typing import Callable, Awaitable, Dict, Optional
 
-@dataclass
-class TestRequest:
-    query_params: Dict[str, str] = field(default_factory=dict)
+class TestRequest(BaseModel):
+    query_params: Dict[str, str] = {}
 
-@dataclass
-class TestResponse:
+    class Config:
+        from_attributes = True
+
+class TestResponse(BaseModel):
     data: str
+
+    class Config:
+        from_attributes = True
 
 TestHandler = Callable[[TestRequest], Awaitable[TestResponse]]

@@ -24,7 +24,8 @@ pub fn generate_package_json(_schema: &Schema, output_dir: &Path) -> Result<()> 
     "validate": "rohas validate"
   }},
   "dependencies": {{
-    "typescript": "^5.3.3"
+    "typescript": "^5.3.3",
+    "zod": "^3.22.4"
   }},
   "devDependencies": {{
     "@types/node": "^20.10.0",
