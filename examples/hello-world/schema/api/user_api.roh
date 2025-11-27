@@ -17,3 +17,10 @@ api Test {
   response: String
   triggers: [UserCreated]
 }
+
+
+input WebSocketMessage {
+  type: String
+  payload: Json
+}
+

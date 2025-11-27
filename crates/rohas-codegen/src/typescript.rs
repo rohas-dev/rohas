@@ -1,6 +1,6 @@
 use crate::error::Result;
 use crate::templates;
-use rohas_parser::{Api, Event, Model, Schema};
+use rohas_parser::{Api, Event, FieldType, Model, Schema, WebSocket};
 use std::fs;
 use std::path::Path;
 
@@ -444,6 +444,175 @@ pub fn generate_crons(schema: &Schema, output_dir: &Path) -> Result<()> {
     Ok(())
 }
 
+pub fn generate_websockets(schema: &Schema, output_dir: &Path) -> Result<()> {
+    let ws_dir = output_dir.join("generated/websockets");
+
+    for ws in &schema.websockets {
+        let content = generate_websocket_content(ws);
+        let file_name = format!("{}.ts", templates::to_snake_case(&ws.name));
+        fs::write(ws_dir.join(file_name), content)?;
+    }
+ 
+    let handlers_dir = output_dir.join("handlers/websockets");
+    for ws in &schema.websockets {
+        if !ws.on_connect.is_empty() {
+            for handler in &ws.on_connect {
+                let file_name = format!("{}.ts", handler);
+                let handler_path = handlers_dir.join(&file_name);
+                if !handler_path.exists() {
+                    let content = generate_websocket_handler_stub(ws, "onConnect", handler);
+                    fs::write(handler_path, content)?;
+                }
+            }
+        }
+        if !ws.on_message.is_empty() {
+            for handler in &ws.on_message {
+                let file_name = format!("{}.ts", handler);
+                let handler_path = handlers_dir.join(&file_name);
+                if !handler_path.exists() {
+                    let content = generate_websocket_handler_stub(ws, "onMessage", handler);
+                    fs::write(handler_path, content)?;
+                }
+            }
+        }
+        if !ws.on_disconnect.is_empty() {
+            for handler in &ws.on_disconnect {
+                let file_name = format!("{}.ts", handler);
+                let handler_path = handlers_dir.join(&file_name);
+                if !handler_path.exists() {
+                    let content = generate_websocket_handler_stub(ws, "onDisconnect", handler);
+                    fs::write(handler_path, content)?;
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn generate_websocket_content(ws: &WebSocket) -> String {
+    let mut content = String::new();
+
+    content.push_str("import { z } from 'zod';\n");
+
+    if let Some(message_type) = &ws.message {
+        let message_field_type = FieldType::from_str(message_type);
+        let is_custom_type = matches!(message_field_type, FieldType::Custom(_));
+        if is_custom_type {
+            content.push_str(&format!(
+                "import {{ {}, {}Schema }} from '@generated/dto/{}';\n",
+                message_type,
+                message_type,
+                templates::to_snake_case(message_type)
+            ));
+        }
+    }
+
+    content.push_str("\n");
+ 
+    if let Some(message_type) = &ws.message {
+        let message_field_type = FieldType::from_str(message_type);
+        let ts_type = message_field_type.to_typescript();
+        content.push_str(&format!("export interface {}Message {{\n", ws.name));
+        content.push_str(&format!("  data: {};\n", ts_type));
+        content.push_str("  timestamp: Date;\n");
+        content.push_str("}\n\n");
+
+        // Generate zod schema
+        let zod_type = if matches!(message_field_type, FieldType::Custom(_)) {
+            format!("{}Schema", message_type)
+        } else {
+            field_type_to_zod(&message_field_type, false)
+        };
+        content.push_str(&format!("export const {}MessageSchema = z.object({{\n", ws.name));
+        content.push_str(&format!("  data: {},\n", zod_type));
+        content.push_str("  timestamp: z.date(),\n");
+        content.push_str("});\n\n");
+    } else {
+        content.push_str(&format!("export interface {}Message {{\n", ws.name));
+        content.push_str("  data: any;\n");
+        content.push_str("  timestamp: Date;\n");
+        content.push_str("}\n\n");
+
+        content.push_str(&format!("export const {}MessageSchema = z.object({{\n", ws.name));
+        content.push_str("  data: z.any(),\n");
+        content.push_str("  timestamp: z.date(),\n");
+        content.push_str("});\n\n");
+    }
+
+    // Generate connection type
+    content.push_str(&format!("export interface {}Connection {{\n", ws.name));
+    content.push_str("  connectionId: string;\n");
+    content.push_str("  path: string;\n");
+    content.push_str("  connectedAt: Date;\n");
+    content.push_str("}\n\n");
+
+    content.push_str(&format!("export const {}ConnectionSchema = z.object({{\n", ws.name));
+    content.push_str("  connectionId: z.string(),\n");
+    content.push_str("  path: z.string(),\n");
+    content.push_str("  connectedAt: z.date(),\n");
+    content.push_str("});\n");
+
+    content
+}
+
+fn generate_websocket_handler_stub(ws: &WebSocket, handler_type: &str, handler_name: &str) -> String {
+    let mut content = String::new();
+
+    content.push_str(&format!(
+        "import {{ {}Message, {}Connection }} from '@generated/websockets/{}';\n",
+        ws.name,
+        ws.name,
+        templates::to_snake_case(&ws.name)
+    ));
+    content.push_str("import { State } from '@generated/state';\n\n");
+
+    match handler_type {
+        "onConnect" => {
+            content.push_str(&format!(
+                "export async function {}(connection: {}Connection, state: State): Promise<{}Message | null> {{\n",
+                handler_name,
+                ws.name,
+                ws.name
+            ));
+            content.push_str("  // TODO: Implement onConnect handler\n");
+            content.push_str("  // Return a message to send to the client on connection, or null\n");
+            content.push_str(&format!("  console.log('Client connected:', connection.connectionId);\n"));
+            content.push_str("  return null;\n");
+            content.push_str("}\n");
+        }
+        "onMessage" => {
+            content.push_str(&format!(
+                "export async function {}(message: {}Message, connection: {}Connection, state: State): Promise<{}Message | null> {{\n",
+                handler_name,
+                ws.name,
+                ws.name,
+                ws.name
+            ));
+            content.push_str("  // TODO: Implement onMessage handler\n");
+            content.push_str("  // Return a message to send back to the client, or null\n");
+            content.push_str(&format!("  console.log('Received message:', message.data);\n"));
+            content.push_str("  // For auto-triggers (defined in schema triggers): use state.setPayload('EventName', {...})\n");
+            content.push_str("  // For manual triggers: use state.triggerEvent('EventName', {...})\n");
+            content.push_str("  return null;\n");
+            content.push_str("}\n");
+        }
+        "onDisconnect" => {
+            content.push_str(&format!(
+                "export async function {}(connection: {}Connection, state: State): Promise<void> {{\n",
+                handler_name,
+                ws.name
+            ));
+            content.push_str("  // TODO: Implement onDisconnect handler\n");
+            content.push_str(&format!("  console.log('Client disconnected:', connection.connectionId);\n"));
+            content.push_str("}\n");
+        }
+        _ => {}
+    }
+
+    content
+}
+
 pub fn generate_state(output_dir: &Path) -> Result<()> {
     let generated_dir = output_dir.join("generated");
     let content = r#"export interface TriggeredEvent {
@@ -548,6 +717,14 @@ pub fn generate_index(schema: &Schema, output_dir: &Path) -> Result<()> {
         content.push_str(&format!(
             "export * from './events/{}';\n",
             templates::to_snake_case(&event.name)
+        ));
+    }
+
+    content.push_str("\n// WebSockets\n");
+    for ws in &schema.websockets {
+        content.push_str(&format!(
+            "export * from './websockets/{}';\n",
+            templates::to_snake_case(&ws.name)
         ));
     }
 
