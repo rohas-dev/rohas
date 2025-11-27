@@ -272,7 +272,7 @@ Rohas event-driven application
 ## Project Structure
 
 ```
-├── schema/          # Schema definitions (.roh files)
+├── schema/          # Schema definitions (.ro files)
 │   ├── api/        # API endpoint schemas
 │   ├── events/     # Event schemas
 │   ├── models/     # Data model schemas

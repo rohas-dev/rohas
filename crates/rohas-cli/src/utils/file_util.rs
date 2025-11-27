@@ -51,7 +51,7 @@ pub fn parse_directory(dir: &PathBuf) -> anyhow::Result<Schema> {
     let mut combined_schema = Schema::new();
     let mut file_count = 0;
 
-    visit_roh_files(dir, &mut |path| {
+    visit_ro_files(dir, &mut |path| {
         info!("Parsing: {}", path.display());
         match Parser::parse_file(path) {
             Ok(schema) => {
@@ -70,7 +70,7 @@ pub fn parse_directory(dir: &PathBuf) -> anyhow::Result<Schema> {
     })?;
 
     if file_count == 0 {
-        anyhow::bail!("No .roh files found in {}", dir.display());
+        anyhow::bail!("No .ro files found in {}", dir.display());
     }
 
     info!("Parsed {} schema files", file_count);
@@ -82,7 +82,7 @@ pub fn parse_directory(dir: &PathBuf) -> anyhow::Result<Schema> {
     Ok(combined_schema)
 }
 
-pub fn visit_roh_files<F>(dir: &PathBuf, callback: &mut F) -> anyhow::Result<()>
+pub fn visit_ro_files<F>(dir: &PathBuf, callback: &mut F) -> anyhow::Result<()>
 where
     F: FnMut(&PathBuf) -> anyhow::Result<()>,
 {
@@ -97,8 +97,8 @@ where
         let path = entry.path();
 
         if path.is_dir() {
-            visit_roh_files(&path, callback)?;
-        } else if path.extension().and_then(|s| s.to_str()) == Some("roh") {
+            visit_ro_files(&path, callback)?;
+        } else if path.extension().and_then(|s| s.to_str()) == Some("ro") {
             callback(&path)?;
         }
     }
