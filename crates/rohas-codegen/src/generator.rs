@@ -42,10 +42,12 @@ impl Generator {
             "generated/api",
             "generated/events",
             "generated/cron",
+            "generated/websockets",
             "handlers",
             "handlers/api",
             "handlers/events",
             "handlers/cron",
+            "handlers/websockets",
         ];
 
         for dir in &dirs {
@@ -74,6 +76,7 @@ impl Generator {
         typescript::generate_apis(schema, output_dir)?;
         typescript::generate_events(schema, output_dir)?;
         typescript::generate_crons(schema, output_dir)?;
+        typescript::generate_websockets(schema, output_dir)?;
         typescript::generate_index(schema, output_dir)?;
 
         info!("Generating TypeScript configuration files");
@@ -94,6 +97,7 @@ impl Generator {
         python::generate_apis(schema, output_dir)?;
         python::generate_events(schema, output_dir)?;
         python::generate_crons(schema, output_dir)?;
+        python::generate_websockets(schema, output_dir)?;
         python::generate_init(schema, output_dir)?;
 
         info!("Generating Python configuration files");

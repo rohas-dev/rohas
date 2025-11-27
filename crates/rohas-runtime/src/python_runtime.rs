@@ -104,7 +104,14 @@ impl PythonRuntime {
             .map(|n| n == "events")
             .unwrap_or(false);
 
-        let function_name = if is_event_handler {
+        let is_websocket_handler = handler_path
+            .parent()
+            .and_then(|p| p.file_name())
+            .and_then(|n| n.to_str())
+            .map(|n| n == "websockets")
+            .unwrap_or(false);
+
+        let function_name = if is_event_handler || is_websocket_handler {
             handler_name.to_string()
         } else {
             Self::extract_function_name(handler_name)
@@ -146,6 +153,9 @@ impl PythonRuntime {
                     RuntimeError::ExecutionFailed(format!("Handler call failed: {}", e))
                 })?
             }
+        } else if is_websocket_handler {
+            Self::call_websocket_handler(py, handler_fn, context, param_count, state_obj)
+                .map_err(|e| RuntimeError::ExecutionFailed(format!("Handler call failed: {}", e)))?
         } else if param_count >= 2 {
             let request_dict = Self::build_request_dict(py, context)?;
             let request_obj = Self::instantiate_request_class(py, handler_name, &request_dict)
@@ -793,6 +803,125 @@ impl PythonRuntime {
         };
 
         Ok(result)
+    }
+
+    fn call_websocket_handler<'py>(
+        py: Python<'py>,
+        handler_fn: Bound<'py, pyo3::PyAny>,
+        context: &HandlerContext,
+        param_count: usize,
+        state_obj: Bound<'py, pyo3::PyAny>,
+    ) -> PyResult<Bound<'py, pyo3::PyAny>> {
+        let json_str = serde_json::to_string(&context.payload)
+            .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+        let json_module = py.import("json")?;
+        let payload_dict = json_module.call_method1("loads", (json_str,))?;
+        let payload_dict = payload_dict.downcast::<PyDict>()
+            .map_err(|e| pyo3::exceptions::PyValueError::new_err(format!("Payload is not a dict: {}", e)))?;
+
+
+        let ws_name = context.metadata
+            .get("websocket_name")
+            .map(|s| s.as_str())
+            .unwrap_or("HelloWorld");
+        
+        let ws_name_snake = templates::to_snake_case(ws_name);
+        let ws_module_path = format!("generated.websockets.{}", ws_name_snake);
+ 
+        let (connection_class, message_class) = match py.import(&ws_module_path) {
+            Ok(ws_module) => {
+                let conn_class = ws_module.getattr(&format!("{}Connection", ws_name)).ok();
+                let msg_class = ws_module.getattr(&format!("{}Message", ws_name)).ok();
+                (conn_class, msg_class)
+            }
+            Err(_) => (None, None)
+        };
+ 
+        let connection_obj = if let Some(conn_class) = connection_class {
+            if let Ok(connection_dict) = payload_dict.get_item("connection") {
+                if let Some(conn_dict) = connection_dict {
+                    if let Ok(conn_dict) = conn_dict.downcast::<PyDict>() {
+                        if let Ok(model_validate) = conn_class.getattr("model_validate") {
+                            if let Ok(conn_obj) = model_validate.call1((conn_dict,)) {
+                                conn_obj
+                            } else {
+                                conn_class.call((), Some(conn_dict)).unwrap_or_else(|_| conn_dict.clone().into_any())
+                            }
+                        } else {
+                            conn_class.call((), Some(conn_dict)).unwrap_or_else(|_| conn_dict.clone().into_any())
+                        }
+                    } else {
+                        conn_dict.clone().into_any()
+                    }
+                } else {
+ 
+                    if let Ok(model_validate) = conn_class.getattr("model_validate") {
+                        if let Ok(conn_obj) = model_validate.call1((payload_dict,)) {
+                            conn_obj
+                        } else {
+                            conn_class.call((), Some(payload_dict)).unwrap_or_else(|_| payload_dict.clone().into_any())
+                        }
+                    } else {
+                        conn_class.call((), Some(payload_dict)).unwrap_or_else(|_| payload_dict.clone().into_any())
+                    }
+                }
+            } else {
+
+                if let Ok(model_validate) = conn_class.getattr("model_validate") {
+                    if let Ok(conn_obj) = model_validate.call1((payload_dict,)) {
+                        conn_obj
+                    } else {
+                        conn_class.call((), Some(payload_dict)).unwrap_or_else(|_| payload_dict.clone().into_any())
+                    }
+                } else {
+                    conn_class.call((), Some(payload_dict)).unwrap_or_else(|_| payload_dict.clone().into_any())
+                }
+            }
+        } else {
+            payload_dict.clone().into_any()
+        };
+
+        let message_obj = if param_count >= 3 {
+            if let Some(msg_class) = message_class {
+                if let Ok(message_dict) = payload_dict.get_item("message") {
+                    if let Some(msg_dict) = message_dict {
+                        if let Ok(msg_dict) = msg_dict.downcast::<PyDict>() {
+                            if let Ok(model_validate) = msg_class.getattr("model_validate") {
+                                if let Ok(msg_obj) = model_validate.call1((msg_dict,)) {
+                                    Some(msg_obj)
+                                } else {
+                                    Some(msg_class.call((), Some(msg_dict)).unwrap_or_else(|_| msg_dict.clone().into_any()))
+                                }
+                            } else {
+                                Some(msg_class.call((), Some(msg_dict)).unwrap_or_else(|_| msg_dict.clone().into_any()))
+                            }
+                        } else {
+                            Some(msg_dict.clone().into_any())
+                        }
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        if param_count == 3 {
+            if let Some(msg) = message_obj {
+                handler_fn.call1((msg, connection_obj, state_obj))
+            } else {
+                handler_fn.call1((payload_dict.clone().into_any(), connection_obj, state_obj))
+            }
+        } else if param_count == 2 {
+            handler_fn.call1((connection_obj, state_obj))
+        } else {
+            handler_fn.call1((connection_obj,))
+        }
     }
 
     fn extract_function_name(handler_name: &str) -> String {

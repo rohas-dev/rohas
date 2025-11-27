@@ -58,7 +58,7 @@ cron = "0.15.0"
 chrono = { version = "0.4", features = ["serde"] }
 
 # HTTP / Web
-axum = "0.8.7"
+axum = { version = "0.8.7", features = ["ws"] }
 hyper = "1.8.1"
 tower = "0.5.2"
 tower-http = { version = "0.6.6", features = ["trace", "cors"] }

@@ -1,6 +1,6 @@
 use crate::error::Result;
 use crate::templates;
-use rohas_parser::{Api, Event, FieldType, Model, Schema};
+use rohas_parser::{Api, Event, FieldType, Model, Schema, WebSocket};
 use std::fs;
 use std::path::Path;
 
@@ -298,6 +298,151 @@ pub fn generate_crons(schema: &Schema, output_dir: &Path) -> Result<()> {
     Ok(())
 }
 
+pub fn generate_websockets(schema: &Schema, output_dir: &Path) -> Result<()> {
+    let ws_dir = output_dir.join("generated/websockets");
+
+    for ws in &schema.websockets {
+        let content = generate_websocket_content(ws);
+        let file_name = format!("{}.py", templates::to_snake_case(&ws.name));
+        fs::write(ws_dir.join(file_name), content)?;
+    }
+
+    let handlers_dir = output_dir.join("handlers/websockets");
+    for ws in &schema.websockets {
+        if !ws.on_connect.is_empty() {
+            for handler in &ws.on_connect {
+                let file_name = format!("{}.py", handler);
+                let handler_path = handlers_dir.join(&file_name);
+                if !handler_path.exists() {
+                    let content = generate_websocket_handler_stub(ws, "onConnect", handler);
+                    fs::write(handler_path, content)?;
+                }
+            }
+        }
+        if !ws.on_message.is_empty() {
+            for handler in &ws.on_message {
+                let file_name = format!("{}.py", handler);
+                let handler_path = handlers_dir.join(&file_name);
+                if !handler_path.exists() {
+                    let content = generate_websocket_handler_stub(ws, "onMessage", handler);
+                    fs::write(handler_path, content)?;
+                }
+            }
+        }
+        if !ws.on_disconnect.is_empty() {
+            for handler in &ws.on_disconnect {
+                let file_name = format!("{}.py", handler);
+                let handler_path = handlers_dir.join(&file_name);
+                if !handler_path.exists() {
+                    let content = generate_websocket_handler_stub(ws, "onDisconnect", handler);
+                    fs::write(handler_path, content)?;
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn generate_websocket_content(ws: &WebSocket) -> String {
+    let mut content = String::new();
+
+    content.push_str("from pydantic import BaseModel\n");
+    content.push_str("from typing import Dict, Any, Optional\n");
+    content.push_str("from datetime import datetime\n\n");
+
+    if let Some(message_type) = &ws.message {
+        let message_field_type = FieldType::from_str(message_type);
+        let is_custom_type = matches!(message_field_type, FieldType::Custom(_));
+        if is_custom_type {
+            content.push_str(&format!(
+                "from ..dto.{} import {}\n",
+                templates::to_snake_case(message_type),
+                message_type
+            ));
+        }
+    }
+
+    content.push_str(&format!("class {}Message(BaseModel):\n", ws.name));
+    if let Some(message_type) = &ws.message {
+        let message_field_type = FieldType::from_str(message_type);
+        let py_type = message_field_type.to_python();
+        content.push_str(&format!("    data: {}\n", py_type));
+    } else {
+        content.push_str("    data: Dict[str, Any]\n");
+    }
+    content.push_str("    timestamp: datetime\n\n");
+    content.push_str("    class Config:\n");
+    content.push_str("        from_attributes = True\n\n");
+
+    content.push_str(&format!(
+        "class {}Connection(BaseModel):\n",
+        ws.name
+    ));
+    content.push_str("    connection_id: str\n");
+    content.push_str("    path: str\n");
+    content.push_str("    connected_at: datetime\n\n");
+    content.push_str("    class Config:\n");
+    content.push_str("        from_attributes = True\n");
+
+    content
+}
+
+fn generate_websocket_handler_stub(ws: &WebSocket, handler_type: &str, handler_name: &str) -> String {
+    let mut content = String::new();
+
+    content.push_str(&format!(
+        "from generated.websockets.{} import {}Message, {}Connection\n",
+        templates::to_snake_case(&ws.name),
+        ws.name,
+        ws.name
+    ));
+    content.push_str("from generated.state import State\n");
+    content.push_str("from typing import Optional\n\n");
+
+    match handler_type {
+        "onConnect" => {
+            content.push_str(&format!(
+                "async def {}(connection: {}Connection, state: State) -> Optional[{}Message]:\n",
+                handler_name,
+                ws.name,
+                ws.name
+            ));
+            content.push_str("    # TODO: Implement onConnect handler\n");
+            content.push_str("    # Return a message to send to the client on connection, or None\n");
+            content.push_str(&format!("    print(f'Client connected: {{connection.connection_id}}')\n"));
+            content.push_str("    return None\n");
+        }
+        "onMessage" => {
+            content.push_str(&format!(
+                "async def {}(message: {}Message, connection: {}Connection, state: State) -> Optional[{}Message]:\n",
+                handler_name,
+                ws.name,
+                ws.name,
+                ws.name
+            ));
+            content.push_str("    # TODO: Implement onMessage handler\n");
+            content.push_str("    # Return a message to send back to the client, or None\n");
+            content.push_str(&format!("    print(f'Received message: {{message.data}}')\n"));
+            content.push_str("    # For auto-triggers (defined in schema triggers): use state.set_payload('EventName', {...})\n");
+            content.push_str("    # For manual triggers: use state.trigger_event('EventName', {...})\n");
+            content.push_str("    return None\n");
+        }
+        "onDisconnect" => {
+            content.push_str(&format!(
+                "async def {}(connection: {}Connection, state: State) -> None:\n",
+                handler_name,
+                ws.name
+            ));
+            content.push_str("    # TODO: Implement onDisconnect handler\n");
+            content.push_str(&format!("    print(f'Client disconnected: {{connection.connection_id}}')\n"));
+        }
+        _ => {}
+    }
+
+    content
+}
+
 pub fn generate_state(output_dir: &Path) -> Result<()> {
     let generated_dir = output_dir.join("generated");
     let content = r#"from typing import Any, Dict, List, Optional
@@ -363,7 +508,7 @@ class State:
 pub fn generate_init(schema: &Schema, output_dir: &Path) -> Result<()> {
     let generated_dir = output_dir.join("generated");
 
-    let subdirs = ["models", "dto", "api", "events", "cron"];
+    let subdirs = ["models", "dto", "api", "events", "cron", "websockets"];
     for subdir in &subdirs {
         fs::write(generated_dir.join(format!("{}/__init__.py", subdir)), "")?;
     }

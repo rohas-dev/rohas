@@ -1,0 +1,9 @@
+ws HelloWorld {
+  path: "/ws/hello"
+  message: WebSocketMessage
+  onConnect: [on_connect_handler]
+  onMessage: [on_message_handler]
+  onDisconnect: [on_disconnect_handler]
+  triggers: [UserCreated]
+  broadcast: true
+}

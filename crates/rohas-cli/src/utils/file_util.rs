@@ -61,6 +61,7 @@ pub fn parse_directory(dir: &PathBuf) -> anyhow::Result<Schema> {
                 combined_schema.apis.extend(schema.apis);
                 combined_schema.events.extend(schema.events);
                 combined_schema.crons.extend(schema.crons);
+                combined_schema.websockets.extend(schema.websockets);
                 file_count += 1;
                 Ok(())
             }
