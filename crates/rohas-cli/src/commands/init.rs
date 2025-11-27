@@ -31,7 +31,7 @@ pub async fn execute(name: String, lang: String, _example: Option<String>) -> Re
 }
 "#;
 
-    fs::write(project_dir.join("schema/models/user.roh"), user_model)?;
+    fs::write(project_dir.join("schema/models/user.ro"), user_model)?;
 
     let user_input = r#"input CreateUserInput {
   name: String
@@ -49,7 +49,7 @@ pub async fn execute(name: String, lang: String, _example: Option<String>) -> Re
 "#;
 
     fs::write(
-        project_dir.join("schema/api/user_api.roh"),
+        project_dir.join("schema/api/user_api.ro"),
         format!("{}\n{}", user_input, user_api),
     )?;
 
@@ -60,7 +60,7 @@ pub async fn execute(name: String, lang: String, _example: Option<String>) -> Re
 "#;
 
     fs::write(
-        project_dir.join("schema/events/user_events.roh"),
+        project_dir.join("schema/events/user_events.ro"),
         user_event,
     )?;
 
@@ -110,7 +110,7 @@ Rohas project initialized with {} handlers.
 
 ## Project Structure
 
-- `schema/` - Schema definitions (.roh files)
+- `schema/` - Schema definitions (.ro files)
 - `src/handlers/` - Your handler implementations
 - `config/` - Configuration files
 "#,

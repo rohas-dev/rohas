@@ -4,7 +4,7 @@ use rohas_engine::EngineConfig;
 use std::path::PathBuf;
 use tracing::info;
 
-pub async fn execute(schema_path: PathBuf, port: u16, watch: bool) -> Result<()> {
+pub async fn execute(schema_path: PathBuf, _port: u16, watch: bool) -> Result<()> {
     info!("Starting development server...");
 
     let mut config = match EngineConfig::from_project_root() {
@@ -18,7 +18,7 @@ pub async fn execute(schema_path: PathBuf, port: u16, watch: bool) -> Result<()>
         }
     };
     config.project_root = std::env::current_dir()?;
-    let actual_path = if !schema_path.exists() && schema_path.ends_with("index.roh") {
+    let actual_path = if !schema_path.exists() && schema_path.ends_with("index.ro") {
         schema_path
             .parent()
             .map(|p| p.to_path_buf())
