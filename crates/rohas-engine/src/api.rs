@@ -19,18 +19,21 @@ pub struct ApiState {
     pub executor: Arc<Executor>,
     pub schema: Arc<Schema>,
     pub config: Arc<EngineConfig>,
+    pub event_bus: Arc<crate::event::EventBus>,
 }
 
 pub fn build_router(
     executor: Arc<Executor>,
     schema: Arc<Schema>,
     config: Arc<EngineConfig>,
+    event_bus: Arc<crate::event::EventBus>,
 ) -> Router {
     let mut router = Router::new();
     let state = ApiState {
         executor,
         schema: schema.clone(),
         config,
+        event_bus,
     };
 
     for api in &schema.apis {
@@ -105,6 +108,9 @@ async fn api_handler(
             ApiError::NotFound(format!("No handler found for {} {}", method, path_pattern))
         })?;
 
+    let api_triggers = api.triggers.clone();
+    let api_name = api.name.clone();
+
     let handler_name = match state.config.language {
         config::Language::TypeScript => api.name.clone(),
         config::Language::Python => templates::to_snake_case(api.name.clone().as_str()),
@@ -145,7 +151,7 @@ async fn api_handler(
         }
     }
 
-    execute_handler(state, handler_name, payload, query_params).await
+    execute_handler(state, handler_name, payload, query_params, api_triggers, api_name).await
 }
 
 fn method_matches(api_method: &HttpMethod, request_method: &axum::http::Method) -> bool {
@@ -195,6 +201,8 @@ async fn execute_handler(
     handler_name: String,
     payload: Value,
     query_params: HashMap<String, String>,
+    api_triggers: Vec<String>,
+    api_name: String,
 ) -> Result<Response, ApiError> {
     let result = state
         .executor
@@ -203,7 +211,40 @@ async fn execute_handler(
         .map_err(|e| ApiError::Internal(e.to_string()))?;
 
     if result.success {
-        Ok((StatusCode::OK, Json(result.data.unwrap_or(Value::Null))).into_response())
+        let response_data = result.data.clone().unwrap_or(Value::Null);
+        
+        for triggered_event in &result.triggers {
+            if let Err(e) = state
+                .event_bus
+                .emit(&triggered_event.event_name, triggered_event.payload.clone())
+                .await
+            {
+                tracing::error!(
+                    "Failed to emit event {} from API {}: {}",
+                    triggered_event.event_name,
+                    api_name,
+                    e
+                );
+            }
+        }
+        
+        for trigger in &api_triggers {
+            let payload = result.auto_trigger_payloads
+                .get(trigger)
+                .cloned()
+                .unwrap_or_else(|| response_data.clone());  
+            
+            if let Err(e) = state.event_bus.emit(trigger, payload).await {
+                tracing::error!(
+                    "Failed to emit auto-triggered event {} from API {}: {}",
+                    trigger,
+                    api_name,
+                    e
+                );
+            }
+        }
+        
+        Ok((StatusCode::OK, Json(response_data)).into_response())
     } else {
         Ok((
             StatusCode::INTERNAL_SERVER_ERROR,

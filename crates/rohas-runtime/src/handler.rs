@@ -37,6 +37,12 @@ impl HandlerContext {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TriggeredEvent {
+    pub event_name: String,
+    pub payload: serde_json::Value,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HandlerResult {
     pub success: bool,
 
@@ -45,6 +51,12 @@ pub struct HandlerResult {
     pub error: Option<String>,
 
     pub execution_time_ms: u64,
+
+    #[serde(default)]
+    pub triggers: Vec<TriggeredEvent>,
+
+    #[serde(default)]
+    pub auto_trigger_payloads: std::collections::HashMap<String, serde_json::Value>,
 }
 
 impl HandlerResult {
@@ -54,6 +66,8 @@ impl HandlerResult {
             data: Some(data),
             error: None,
             execution_time_ms,
+            triggers: Vec::new(),
+            auto_trigger_payloads: std::collections::HashMap::new(),
         }
     }
 
@@ -63,7 +77,22 @@ impl HandlerResult {
             data: None,
             error: Some(error.into()),
             execution_time_ms,
+            triggers: Vec::new(),
+            auto_trigger_payloads: std::collections::HashMap::new(),
         }
+    }
+
+    pub fn with_trigger(mut self, event_name: impl Into<String>, payload: serde_json::Value) -> Self {
+        self.triggers.push(TriggeredEvent {
+            event_name: event_name.into(),
+            payload,
+        });
+        self
+    }
+
+    pub fn with_auto_trigger_payload(mut self, event_name: impl Into<String>, payload: serde_json::Value) -> Self {
+        self.auto_trigger_payloads.insert(event_name.into(), payload);
+        self
     }
 }
 

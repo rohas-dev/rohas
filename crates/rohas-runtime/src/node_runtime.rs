@@ -151,6 +151,8 @@ impl NodeRuntime {
                     data: None,
                     error: Some(error_msg),
                     execution_time_ms: 0,
+                    triggers: Vec::new(),
+                    auto_trigger_payloads: std::collections::HashMap::new(),
                 });
             }
         } else {

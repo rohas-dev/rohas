@@ -74,6 +74,19 @@ impl Executor {
         self.execute_external_handler(context).await
     }
 
+    pub async fn execute_with_context(&self, context: HandlerContext) -> Result<HandlerResult> {
+        debug!("Executing handler: {}", context.handler_name);
+
+        {
+            let handlers = self.handlers.read().await;
+            if let Some(handler) = handlers.get(&context.handler_name) {
+                return handler.execute(context.clone()).await;
+            }
+        }
+
+        self.execute_external_handler(context).await
+    }
+
     async fn execute_external_handler(&self, context: HandlerContext) -> Result<HandlerResult> {
         let start = std::time::Instant::now();
 

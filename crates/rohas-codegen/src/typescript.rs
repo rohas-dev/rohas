@@ -294,17 +294,20 @@ fn generate_api_handler_stub(api: &Api) -> String {
     let handler_name = format!("handle{}", api.name);
 
     content.push_str(&format!(
-        "import {{ {}, {} }} from '@generated/api/{}';\n\n",
+        "import {{ {}, {} }} from '@generated/api/{}';\n",
         request_type,
         response_type,
         templates::to_snake_case(&api.name)
     ));
+    content.push_str("import { State } from '@generated/state';\n\n");
 
     content.push_str(&format!(
-        "export async function {}(req: {}): Promise<{}> {{\n",
+        "export async function {}(req: {}, state: State): Promise<{}> {{\n",
         handler_name, request_type, response_type
     ));
     content.push_str("  // TODO: Implement handler logic\n");
+    content.push_str("  // For auto-triggers (defined in schema triggers): use state.setPayload('EventName', {...})\n");
+    content.push_str("  // For manual triggers: use state.triggerEvent('EventName', {...})\n");
     content.push_str("  throw new Error('Not implemented');\n");
     content.push_str("}\n");
 
@@ -417,8 +420,80 @@ pub fn generate_crons(schema: &Schema, output_dir: &Path) -> Result<()> {
     Ok(())
 }
 
+pub fn generate_state(output_dir: &Path) -> Result<()> {
+    let generated_dir = output_dir.join("generated");
+    let content = r#"export interface TriggeredEvent {
+  eventName: string;
+  payload: any;
+}
+
+/**
+ * Context object for handlers to trigger events and access runtime state.
+ */
+export class State {
+  private triggers: TriggeredEvent[] = [];
+  private autoTriggerPayloads: Map<string, any> = new Map();
+
+  /**
+   * Manually trigger an event with the given payload.
+   * 
+   * Use this for events that are NOT defined in the schema's triggers list.
+   * 
+   * @param eventName - Name of the event to trigger
+   * @param payload - Event payload data (will be serialized to JSON)
+   */
+  triggerEvent(eventName: string, payload: any): void {
+    this.triggers.push({
+      eventName,
+      payload,
+    });
+  }
+
+  /**
+   * Set the payload for an auto-triggered event.
+   * 
+   * Use this for events that ARE defined in the schema's triggers list.
+   * The event will be automatically triggered after the handler completes,
+   * using the payload you set here.
+   * 
+   * @param eventName - Name of the event (must match a trigger in schema)
+   * @param payload - Event payload data (will be serialized to JSON)
+   */
+  setPayload(eventName: string, payload: any): void {
+    this.autoTriggerPayloads.set(eventName, payload);
+  }
+
+  /**
+   * Get all manually triggered events. Used internally by the runtime.
+   */
+  getTriggers(): TriggeredEvent[] {
+    return [...this.triggers];
+  }
+
+  /**
+   * Get payload for an auto-triggered event. Used internally by the runtime.
+   */
+  getAutoTriggerPayload(eventName: string): any | undefined {
+    return this.autoTriggerPayloads.get(eventName);
+  }
+
+  /**
+   * Get all auto-trigger payloads. Used internally by the runtime.
+   */
+  getAllAutoTriggerPayloads(): Map<string, any> {
+    return new Map(this.autoTriggerPayloads);
+  }
+}
+"#;
+
+    fs::write(generated_dir.join("state.ts"), content)?;
+    Ok(())
+}
+
 pub fn generate_index(schema: &Schema, output_dir: &Path) -> Result<()> {
     let mut content = String::new();
+
+    content.push_str("export * from './state';\n\n");
 
     content.push_str("// Models\n");
     for model in &schema.models {

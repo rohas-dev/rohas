@@ -2,6 +2,7 @@ use crate::error::{Result, RuntimeError};
 use crate::handler::{HandlerContext, HandlerResult};
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyModule};
+use rohas_codegen::templates;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use tokio::sync::RwLock;
@@ -96,7 +97,19 @@ impl PythonRuntime {
             RuntimeError::ExecutionFailed(format!("Failed to import module: {}", e))
         })?;
 
-        let function_name = Self::extract_function_name(handler_name);
+        let is_event_handler = handler_path
+            .parent()
+            .and_then(|p| p.file_name())
+            .and_then(|n| n.to_str())
+            .map(|n| n == "events")
+            .unwrap_or(false);
+
+        let function_name = if is_event_handler {
+            handler_name.to_string()
+        } else {
+            Self::extract_function_name(handler_name)
+        };
+
         let handler_fn = module.getattr(function_name.as_str()).map_err(|e| {
             RuntimeError::HandlerNotFound(format!("Function '{}' not found: {}", function_name, e))
         })?;
@@ -106,13 +119,38 @@ impl PythonRuntime {
         let params = sig.getattr("parameters")?;
         let param_count = params.call_method0("__len__")?.extract::<usize>()?;
 
+        let state_module = py.import("generated.state")?;
+        let state_class = state_module.getattr("State")?;
+        let state_obj = state_class.call0()?;
+        let state_obj_for_triggers = state_obj.clone();
+
         let result = if param_count == 0 {
             handler_fn
                 .call0()
                 .map_err(|e| RuntimeError::ExecutionFailed(format!("Handler call failed: {}", e)))?
+        } else if is_event_handler {
+            let event_obj = Self::instantiate_event_object(py, context, &handler_path)
+                .map_err(|e| RuntimeError::ExecutionFailed(format!("Failed to instantiate event object: {}", e)))?;
+
+            if param_count >= 2 {
+                handler_fn
+                    .call1((event_obj, state_obj))
+                    .map_err(|e| RuntimeError::ExecutionFailed(format!("Handler call failed: {}", e)))?
+            } else {
+                handler_fn
+                    .call1((event_obj,))
+                    .map_err(|e| RuntimeError::ExecutionFailed(format!("Handler call failed: {}", e)))?
+            }
+        } else if param_count >= 2 {
+            let request_dict = Self::build_request_dict(py, context)?;
+            let request_obj = Self::instantiate_request_class(py, handler_name, &request_dict)
+                .unwrap_or_else(|_| request_dict.clone().into_any());
+
+            handler_fn
+                .call1((request_obj, state_obj))
+                .map_err(|e| RuntimeError::ExecutionFailed(format!("Handler call failed: {}", e)))?
         } else {
             let request_dict = Self::build_request_dict(py, context)?;
-
             let request_obj = Self::instantiate_request_class(py, handler_name, &request_dict)
                 .unwrap_or_else(|_| request_dict.clone().into_any());
 
@@ -152,7 +190,60 @@ impl PythonRuntime {
         let data: serde_json::Value =
             serde_json::from_str(&json_str).unwrap_or(serde_json::json!({"raw": json_str}));
 
-        Ok(HandlerResult::success(data, 0))
+        let mut result = HandlerResult::success(data, 0);
+        if param_count >= 2 || (is_event_handler && param_count >= 2) {
+            if let Ok(triggers_py) = state_obj_for_triggers.call_method0("get_triggers") {
+                if let Ok(triggers_list) = triggers_py.downcast::<pyo3::types::PyList>() {
+                    for trigger_item in triggers_list.iter() {
+                        let event_name_py = trigger_item.getattr("event_name");
+                        let payload_py = trigger_item.getattr("payload");
+                        
+                        if let (Ok(event_name_py), Ok(payload_py)) = (event_name_py, payload_py) {
+                            if let Ok(event_name) = event_name_py.extract::<String>() {
+                                let json_module = py.import("json")?;
+                                if let Ok(payload_str) = json_module.call_method1("dumps", (payload_py,))?.extract::<String>() {
+                                    if let Ok(payload_value) = serde_json::from_str::<serde_json::Value>(&payload_str) {
+                                        debug!("Extracted manual trigger: {} with payload", event_name);
+                                        result = result.with_trigger(event_name, payload_value);
+                                    } else {
+                                        debug!("Failed to parse payload JSON for trigger: {}", event_name);
+                                    }
+                                } else {
+                                    debug!("Failed to serialize payload to JSON for trigger: {}", event_name);
+                                }
+                            } else {
+                                debug!("Failed to extract event_name from TriggeredEvent");
+                            }
+                        } else {
+                            debug!("Failed to get event_name or payload from TriggeredEvent");
+                        }
+                    }
+                } else {
+                    debug!("get_triggers() did not return a list");
+                }
+            } else {
+                debug!("Failed to call get_triggers() on State object");
+            }
+            
+            if let Ok(payloads_py) = state_obj_for_triggers.call_method0("get_all_auto_trigger_payloads") {
+                if let Ok(payloads_dict) = payloads_py.downcast::<PyDict>() {
+                    for item in payloads_dict.iter() {
+                        let key = item.0;
+                        let value = item.1;
+                        if let Ok(event_name) = key.extract::<String>() {
+                            let json_module = py.import("json")?;
+                            if let Ok(payload_str) = json_module.call_method1("dumps", (value,))?.extract::<String>() {
+                                if let Ok(payload_value) = serde_json::from_str::<serde_json::Value>(&payload_str) {
+                                    result = result.with_auto_trigger_payload(event_name, payload_value);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(result)
     }
 
     fn build_request_dict<'py>(
@@ -221,6 +312,273 @@ impl PythonRuntime {
             .collect::<String>();
 
         format!("{}Request", pascal_case)
+    }
+
+    fn instantiate_event_object<'py>(
+        py: Python<'py>,
+        context: &HandlerContext,
+        _handler_path: &Path,
+    ) -> PyResult<Bound<'py, pyo3::PyAny>> {
+        let event_name = context.metadata
+            .get("event_name")
+            .ok_or_else(|| pyo3::exceptions::PyValueError::new_err("Event name not found in context metadata"))?;
+        let payload_type = context.metadata.get("event_payload_type");
+
+        let json_str = serde_json::to_string(&context.payload)
+            .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+        let json_module = py.import("json")?;
+        let payload_dict = json_module.call_method1("loads", (json_str,))?;
+        let payload_dict_clone = payload_dict.clone();
+
+        let datetime_module = py.import("datetime")?;
+        let now = datetime_module.getattr("datetime")?.getattr("now")?.call0()?;
+        let now_clone = now.clone();
+
+        let convert_snake_to_camel = |dict: &Bound<'_, PyDict>| -> PyResult<Bound<'_, PyDict>> {
+            let camel_dict = PyDict::new(py);
+            for (key, value) in dict.iter() {
+                if let Ok(key_str) = key.extract::<String>() {
+                    let camel_key = if key_str.contains('_') {
+                        let parts: Vec<&str> = key_str.split('_').collect();
+                        let mut camel = String::new();
+                        for (i, part) in parts.iter().enumerate() {
+                            if i == 0 {
+                                camel.push_str(part);
+                            } else {
+                                let mut chars = part.chars();
+                                if let Some(first) = chars.next() {
+                                    camel.push(first.to_uppercase().next().unwrap());
+                                    camel.push_str(&chars.as_str());
+                                }
+                            }
+                        }
+                        camel
+                    } else {
+                        key_str
+                    };
+                    camel_dict.set_item(camel_key, value)?;
+                } else {
+                    camel_dict.set_item(key, value)?;
+                }
+            }
+            Ok(camel_dict)
+        };
+
+        let payload_obj = if let Some(payload_type_name) = payload_type {
+            let payload_type_snake = templates::to_snake_case(payload_type_name);
+            let model_module_path = format!("generated.models.{}", payload_type_snake);
+            
+            match py.import(&model_module_path) {
+                Ok(model_module) => {
+                    match model_module.getattr(payload_type_name.as_str()) {
+                        Ok(model_class) => {
+                            if let Ok(payload_dict_ref) = payload_dict.downcast::<PyDict>() {
+                                match convert_snake_to_camel(&payload_dict_ref) {
+                                    Ok(camel_payload_dict) => {
+                                        match model_class.call((), Some(&camel_payload_dict)) {
+                                        Ok(model_obj) => {
+                                            debug!("Successfully instantiated payload model: {}", payload_type_name);
+                                            model_obj.into_any()
+                                        }
+                                        Err(e) => {
+                                            debug!("Direct call failed for {}, trying model_validate: {}", payload_type_name, e);
+                                            if let Ok(model_validate) = model_class.getattr("model_validate") {
+                                                match model_validate.call1((camel_payload_dict,)) {
+                                                    Ok(model_obj) => {
+                                                        debug!("Successfully instantiated payload model via model_validate: {}", payload_type_name);
+                                                        model_obj.into_any()
+                                                    }
+                                                    Err(e2) => {
+                                                        debug!("model_validate also failed for {}: {}", payload_type_name, e2);
+                                                        payload_dict.clone()
+                                                    }
+                                                }
+                                            } else {
+                                                payload_dict.clone()
+                                            }
+                                        }
+                                    }
+                                    }
+                                    Err(e) => {
+                                        debug!("Failed to convert field names: {}, trying with original dict", e);
+                                        match model_class.call((), Some(&payload_dict_ref)) {
+                                            Ok(model_obj) => {
+                                                debug!("Successfully instantiated payload model with original dict: {}", payload_type_name);
+                                                model_obj.into_any()
+                                            }
+                                            Err(_) => {
+                                                payload_dict.clone()
+                                            }
+                                        }
+                                    }
+                                }
+                            } else {
+                                if let Ok(model_validate) = model_class.getattr("model_validate") {
+                                    match model_validate.call1((payload_dict.clone(),)) {
+                                        Ok(model_obj) => {
+                                            debug!("Successfully instantiated payload model via model_validate (PyAny): {}", payload_type_name);
+                                            model_obj.into_any()
+                                        }
+                                        Err(e) => {
+                                            debug!("model_validate failed for {} (PyAny): {}", payload_type_name, e);
+                                            payload_dict.clone()
+                                        }
+                                    }
+                                } else {
+                                    payload_dict.clone()
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            debug!("Failed to get model class {} from module: {}", payload_type_name, e);
+                            payload_dict.clone()
+                        }
+                    }
+                }
+                Err(e) => {
+                    debug!("Failed to import model module {}: {}", model_module_path, e);
+                    payload_dict.clone()
+                }
+            }
+        } else {
+            debug!("No payload type in metadata, using dict as-is");
+            payload_dict.clone()
+        };
+
+        let event_name_snake = templates::to_snake_case(event_name);
+        let event_module_path = format!("generated.events.{}", event_name_snake);
+        
+        match py.import(&event_module_path) {
+            Ok(event_module) => {
+                match event_module.getattr(event_name.as_str()) {
+                    Ok(event_class) => {
+                        let event_dict = PyDict::new(py);
+                        event_dict.set_item("payload", payload_obj)?;
+                        event_dict.set_item("timestamp", &now)?;
+                        
+                        let mut event_dict_for_direct = None;
+                        if let Ok(model_validate) = event_class.getattr("model_validate") {
+                            debug!("Attempting model_validate for event {}", event_name);
+                            match model_validate.call1((event_dict,)) {
+                                Ok(event_obj) => {
+                                    debug!("model_validate call succeeded for event {}", event_name);
+                                    match event_obj.getattr("payload") {
+                                        Ok(_) => {
+                                            debug!("Event object has payload attribute - instantiation successful via model_validate");
+                                            return Ok(event_obj);
+                                        }
+                                        Err(e) => {
+                                            debug!("Event object from model_validate missing payload attribute: {}", e);
+                                        }
+                                    }
+                                }
+                                Err(e) => {
+                                    let error_msg = format!("{}", e);
+                                    debug!("model_validate failed for event {}: {}", event_name, error_msg);
+                                    let py_err = e.value(py);
+                                    if let Ok(err_str) = py_err.str() {
+                                        debug!("Python error details: {}", err_str.to_string_lossy());
+                                    }
+                                    let json_str_direct = serde_json::to_string(&context.payload)
+                                        .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+                                    let payload_for_direct = json_module.call_method1("loads", (json_str_direct,))?;
+                                    let event_dict2 = PyDict::new(py);
+                                    event_dict2.set_item("payload", payload_for_direct)?;
+                                    event_dict2.set_item("timestamp", &now_clone)?;
+                                    event_dict_for_direct = Some(event_dict2);
+                                }
+                            }
+                        } else {
+                            debug!("model_validate method not found for event {}, using direct call", event_name);
+                            event_dict_for_direct = Some(event_dict);
+                        }
+                        
+                        if let Some(event_dict2) = event_dict_for_direct {
+                            debug!("Attempting direct call for event {}", event_name);
+                            match event_class.call((), Some(&event_dict2)) {
+                                Ok(event_obj) => {
+                                    debug!("Direct call succeeded for event {}", event_name);
+                                    match event_obj.getattr("payload") {
+                                        Ok(_) => {
+                                            debug!("Event object has payload attribute - instantiation successful via direct call");
+                                            return Ok(event_obj);
+                                        }
+                                        Err(e) => {
+                                            debug!("Event object missing payload attribute: {}", e);
+                                        }
+                                    }
+                                }
+                                Err(e) => {
+                                    let error_msg = format!("{}", e);
+                                    debug!("Direct call also failed for event {}, error: {}", event_name, error_msg);
+                                    let py_err = e.value(py);
+                                    if let Ok(err_str) = py_err.str() {
+                                        debug!("Python error details: {}", err_str.to_string_lossy());
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        debug!("Failed to get event class {} from module: {}", event_name, e);
+                    }
+                }
+            }
+            Err(e) => {
+                debug!("Failed to import event module {}: {}", event_module_path, e);
+            }
+        }
+
+        debug!("Attempting final fallback instantiation for event: {} with dict payload", event_name);
+        let final_event_dict = PyDict::new(py);
+        final_event_dict.set_item("payload", payload_dict_clone)?;
+        final_event_dict.set_item("timestamp", &now_clone)?;
+        
+        if let Ok(event_module) = py.import(&event_module_path) {
+            if let Ok(event_class) = event_module.getattr(event_name.as_str()) {
+                let mut final_dict_for_direct = None;
+                if let Ok(model_validate) = event_class.getattr("model_validate") {
+                    match model_validate.call1((final_event_dict,)) {
+                        Ok(event_obj) => {
+                            if event_obj.getattr("payload").is_ok() {
+                                debug!("Successfully instantiated event via fallback model_validate with dict payload");
+                                return Ok(event_obj);
+                            }
+                        }
+                        Err(e) => {
+                            debug!("Fallback model_validate failed: {}", e);
+                            let json_str_fallback2 = serde_json::to_string(&context.payload)
+                                .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+                            let payload_dict_fallback2 = json_module.call_method1("loads", (json_str_fallback2,))?;
+                            let final_dict2 = PyDict::new(py);
+                            final_dict2.set_item("payload", payload_dict_fallback2)?;
+                            final_dict2.set_item("timestamp", &now_clone)?;
+                            final_dict_for_direct = Some(final_dict2);
+                        }
+                    }
+                } else {
+                    final_dict_for_direct = Some(final_event_dict);
+                }
+                if let Some(final_dict2) = final_dict_for_direct {
+                    match event_class.call((), Some(&final_dict2)) {
+                    Ok(event_obj) => {
+                        if event_obj.getattr("payload").is_ok() {
+                            debug!("Successfully instantiated event via fallback direct call with dict payload");
+                            return Ok(event_obj);
+                        }
+                    }
+                    Err(e) => {
+                        debug!("Fallback direct call also failed: {}", e);
+                    }
+                    }
+                }
+            }
+        }
+        
+        Err(pyo3::exceptions::PyValueError::new_err(format!(
+            "Failed to instantiate event object {}: All instantiation methods failed. Check debug logs for details.",
+            event_name
+        )))
     }
 
     fn context_to_py_dict<'py>(

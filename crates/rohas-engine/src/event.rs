@@ -38,6 +38,7 @@ impl EventBus {
         let event_name = event.name.clone();
         let handlers = event.handlers.clone();
         let triggers = event.triggers.clone();
+        let event_payload_type = event.payload.clone();
         let executor = self.executor.clone();
         let adapter = self.adapter.clone();
 
@@ -50,6 +51,7 @@ impl EventBus {
                 let executor = executor.clone();
                 let adapter = adapter.clone();
                 let event_name = event_name.clone();
+                let event_payload_type = event_payload_type.clone();
 
                 async move {
                     info!("Received event: {}", event_name);
@@ -57,7 +59,11 @@ impl EventBus {
                     for handler_name in &handlers {
                         debug!("Executing handler: {}", handler_name);
 
-                        match executor.execute(handler_name, msg.payload.clone()).await {
+                        let mut handler_context = rohas_runtime::HandlerContext::new(handler_name, msg.payload.clone());
+                        handler_context = handler_context.with_metadata("event_name", &event_name);
+                        handler_context = handler_context.with_metadata("event_payload_type", &event_payload_type);
+
+                        match executor.execute_with_context(handler_context).await {
                             Ok(result) => {
                                 if result.success {
                                     info!("Handler {} completed successfully", handler_name);

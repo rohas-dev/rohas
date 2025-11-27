@@ -68,6 +68,7 @@ impl Generator {
     }
 
     fn generate_typescript(&self, schema: &Schema, output_dir: &Path) -> Result<()> {
+        typescript::generate_state(output_dir)?;
         typescript::generate_models(schema, output_dir)?;
         typescript::generate_dtos(schema, output_dir)?;
         typescript::generate_apis(schema, output_dir)?;
@@ -87,6 +88,7 @@ impl Generator {
     }
 
     fn generate_python(&self, schema: &Schema, output_dir: &Path) -> Result<()> {
+        python::generate_state(output_dir)?;
         python::generate_models(schema, output_dir)?;
         python::generate_dtos(schema, output_dir)?;
         python::generate_apis(schema, output_dir)?;

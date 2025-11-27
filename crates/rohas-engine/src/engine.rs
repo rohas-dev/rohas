@@ -158,7 +158,12 @@ impl Engine {
 
         info!("Starting HTTP server on {}", addr);
         let arc_config = Arc::new(self.config.clone());
-        let mut router = api::build_router(self.executor.clone(), self.schema.clone(), arc_config);
+        let mut router = api::build_router(
+            self.executor.clone(),
+            self.schema.clone(),
+            arc_config,
+            self.event_bus.clone(),
+        );
 
         if self.config.server.enable_cors {
             router = router::with_cors(router);

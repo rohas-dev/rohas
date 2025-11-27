@@ -15,4 +15,5 @@ api Test {
   method: GET
   path: "/test"
   response: String
+  triggers: [UserCreated]
 }
