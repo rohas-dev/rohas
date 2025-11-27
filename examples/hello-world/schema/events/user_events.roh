@@ -2,3 +2,8 @@ event UserCreated {
   payload: User
   handler: [send_welcome_email]
 }
+
+event ManualTrigger {
+  payload: String
+  handler: [manual_trigger]
+}

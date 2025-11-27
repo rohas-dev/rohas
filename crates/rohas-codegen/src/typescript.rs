@@ -340,25 +340,49 @@ pub fn generate_events(schema: &Schema, output_dir: &Path) -> Result<()> {
     Ok(())
 }
 
+fn payload_type_to_zod(type_name: &str) -> String {
+    match type_name {
+        "String" => "z.string()".to_string(),
+        "Int" | "Float" => "z.number()".to_string(),
+        "Boolean" | "Bool" => "z.boolean()".to_string(),
+        "DateTime" | "Date" => "z.date()".to_string(),
+        _ => format!("{}Schema", type_name),
+    }
+}
+
 fn generate_event_content(event: &Event) -> String {
     let mut content = String::new();
 
     content.push_str("import { z } from 'zod';\n");
-    content.push_str(&format!(
-        "import {{ {}, {}Schema }} from '@generated/models/{}';\n\n",
-        event.payload,
-        event.payload,
-        templates::to_snake_case(&event.payload)
-    ));
+    
+    let payload_is_primitive = is_primitive_type(&event.payload);
+    
+    if payload_is_primitive {
+        content.push_str("\n");
+    } else {
+        content.push_str(&format!(
+            "import {{ {}, {}Schema }} from '@generated/models/{}';\n\n",
+            event.payload,
+            event.payload,
+            templates::to_snake_case(&event.payload)
+        ));
+    }
+
+    let payload_ts_type = if payload_is_primitive {
+        primitive_to_typescript(&event.payload)
+    } else {
+        event.payload.clone()
+    };
 
     content.push_str(&format!("export interface {} {{\n", event.name));
-    content.push_str(&format!("  payload: {};\n", event.payload));
+    content.push_str(&format!("  payload: {};\n", payload_ts_type));
     content.push_str("  timestamp: Date;\n");
     content.push_str("}\n\n");
 
     // Generate zod schema for event
+    let payload_zod_type = payload_type_to_zod(&event.payload);
     content.push_str(&format!("export const {}Schema = z.object({{\n", event.name));
-    content.push_str(&format!("  payload: {}Schema,\n", event.payload));
+    content.push_str(&format!("  payload: {},\n", payload_zod_type));
     content.push_str("  timestamp: z.date(),\n");
     content.push_str("});\n\n");
 

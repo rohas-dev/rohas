@@ -21,4 +21,8 @@ async def handle_test(req: TestRequest, state: State) -> TestResponse:
         'created_at': '2024-01-01T00:00:00Z'
     })
 
+    state.trigger_event('ManualTrigger', {
+        'payload': 'Hello, world!'
+    })
+
     return TestResponse(data="Hello, world!")

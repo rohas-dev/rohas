@@ -169,21 +169,41 @@ impl PythonRuntime {
         let json_str: String = if final_result.is_none() {
             "null".to_string()
         } else {
-            let dataclasses = py.import("dataclasses")?;
             let json_module = py.import("json")?;
 
-            let json_ready = if dataclasses
-                .call_method1("is_dataclass", (final_result.as_any(),))?
-                .extract::<bool>()?
-            {
-                dataclasses.call_method1("asdict", (final_result.as_any(),))?
+            let json_ready = if let Ok(model_dump) = final_result.getattr("model_dump") {  
+                match model_dump.call0() {
+                    Ok(dumped) => dumped,
+                    Err(_) => final_result,
+                }
+            } else if let Ok(dict_method) = final_result.getattr("dict") {
+         
+                match dict_method.call0() {
+                    Ok(dumped) => dumped,
+                    Err(_) => final_result,
+                }
             } else {
-                final_result
+                let dataclasses = py.import("dataclasses")?;
+                if dataclasses
+                    .call_method1("is_dataclass", (final_result.as_any(),))
+                    .and_then(|r| r.extract::<bool>())
+                    .unwrap_or(false)
+                {
+                    match dataclasses.call_method1("asdict", (final_result.as_any(),)) {
+                        Ok(dict) => dict,
+                        Err(_) => final_result,
+                    }
+                } else {
+                    final_result
+                }
             };
 
             match json_module.call_method1("dumps", (json_ready.as_any(),)) {
                 Ok(json_result) => json_result.extract::<String>()?,
-                Err(_) => json_ready.str()?.to_string(),
+                Err(e) => {
+                    debug!("Failed to serialize response to JSON: {}, falling back to string representation", e);
+                    json_ready.str()?.to_string()
+                }
             }
         };
 
@@ -314,6 +334,35 @@ impl PythonRuntime {
         format!("{}Request", pascal_case)
     }
 
+    fn is_primitive_type(type_name: &str) -> bool {
+        matches!(
+            type_name,
+            "String" | "Int" | "Float" | "Boolean" | "Bool" | "DateTime" | "Date"
+        )
+    }
+
+    fn extract_primitive_value<'py>(
+        py: Python<'py>,
+        payload_dict: &Bound<'py, pyo3::PyAny>,
+        payload_type: &str,
+    ) -> PyResult<Bound<'py, pyo3::PyAny>> {
+
+        if let Ok(payload_dict_ref) = payload_dict.downcast::<PyDict>() {
+            if let Ok(Some(value)) = payload_dict_ref.get_item("payload") {
+                debug!("Extracted primitive value from payload dict for type: {}", payload_type);
+                return Ok(value);
+            }
+            let len = payload_dict_ref.len();
+            if len == 1 {
+                if let Some((_, value)) = payload_dict_ref.iter().next() {
+                    debug!("Extracted primitive value from single-key dict for type: {}", payload_type);
+                    return Ok(value);
+                }
+            }
+        }
+        Ok(payload_dict.clone())
+    }
+
     fn instantiate_event_object<'py>(
         py: Python<'py>,
         context: &HandlerContext,
@@ -365,79 +414,84 @@ impl PythonRuntime {
         };
 
         let payload_obj = if let Some(payload_type_name) = payload_type {
-            let payload_type_snake = templates::to_snake_case(payload_type_name);
-            let model_module_path = format!("generated.models.{}", payload_type_snake);
-            
-            match py.import(&model_module_path) {
-                Ok(model_module) => {
-                    match model_module.getattr(payload_type_name.as_str()) {
-                        Ok(model_class) => {
-                            if let Ok(payload_dict_ref) = payload_dict.downcast::<PyDict>() {
-                                match convert_snake_to_camel(&payload_dict_ref) {
-                                    Ok(camel_payload_dict) => {
-                                        match model_class.call((), Some(&camel_payload_dict)) {
-                                        Ok(model_obj) => {
-                                            debug!("Successfully instantiated payload model: {}", payload_type_name);
-                                            model_obj.into_any()
-                                        }
-                                        Err(e) => {
-                                            debug!("Direct call failed for {}, trying model_validate: {}", payload_type_name, e);
-                                            if let Ok(model_validate) = model_class.getattr("model_validate") {
-                                                match model_validate.call1((camel_payload_dict,)) {
-                                                    Ok(model_obj) => {
-                                                        debug!("Successfully instantiated payload model via model_validate: {}", payload_type_name);
-                                                        model_obj.into_any()
-                                                    }
-                                                    Err(e2) => {
-                                                        debug!("model_validate also failed for {}: {}", payload_type_name, e2);
-                                                        payload_dict.clone()
-                                                    }
-                                                }
-                                            } else {
-                                                payload_dict.clone()
-                                            }
-                                        }
-                                    }
-                                    }
-                                    Err(e) => {
-                                        debug!("Failed to convert field names: {}, trying with original dict", e);
-                                        match model_class.call((), Some(&payload_dict_ref)) {
+            if Self::is_primitive_type(payload_type_name) {
+                debug!("Payload type {} is primitive, extracting value", payload_type_name);
+                Self::extract_primitive_value(py, &payload_dict, payload_type_name)?
+            } else {
+                let payload_type_snake = templates::to_snake_case(payload_type_name);
+                let model_module_path = format!("generated.models.{}", payload_type_snake);
+                
+                match py.import(&model_module_path) {
+                    Ok(model_module) => {
+                        match model_module.getattr(payload_type_name.as_str()) {
+                            Ok(model_class) => {
+                                if let Ok(payload_dict_ref) = payload_dict.downcast::<PyDict>() {
+                                    match convert_snake_to_camel(&payload_dict_ref) {
+                                        Ok(camel_payload_dict) => {
+                                            match model_class.call((), Some(&camel_payload_dict)) {
                                             Ok(model_obj) => {
-                                                debug!("Successfully instantiated payload model with original dict: {}", payload_type_name);
+                                                debug!("Successfully instantiated payload model: {}", payload_type_name);
                                                 model_obj.into_any()
                                             }
-                                            Err(_) => {
-                                                payload_dict.clone()
+                                            Err(e) => {
+                                                debug!("Direct call failed for {}, trying model_validate: {}", payload_type_name, e);
+                                                if let Ok(model_validate) = model_class.getattr("model_validate") {
+                                                    match model_validate.call1((camel_payload_dict,)) {
+                                                        Ok(model_obj) => {
+                                                            debug!("Successfully instantiated payload model via model_validate: {}", payload_type_name);
+                                                            model_obj.into_any()
+                                                        }
+                                                        Err(e2) => {
+                                                            debug!("model_validate also failed for {}: {}", payload_type_name, e2);
+                                                            payload_dict.clone()
+                                                        }
+                                                    }
+                                                } else {
+                                                    payload_dict.clone()
+                                                }
                                             }
                                         }
-                                    }
-                                }
-                            } else {
-                                if let Ok(model_validate) = model_class.getattr("model_validate") {
-                                    match model_validate.call1((payload_dict.clone(),)) {
-                                        Ok(model_obj) => {
-                                            debug!("Successfully instantiated payload model via model_validate (PyAny): {}", payload_type_name);
-                                            model_obj.into_any()
                                         }
                                         Err(e) => {
-                                            debug!("model_validate failed for {} (PyAny): {}", payload_type_name, e);
-                                            payload_dict.clone()
+                                            debug!("Failed to convert field names: {}, trying with original dict", e);
+                                            match model_class.call((), Some(&payload_dict_ref)) {
+                                                Ok(model_obj) => {
+                                                    debug!("Successfully instantiated payload model with original dict: {}", payload_type_name);
+                                                    model_obj.into_any()
+                                                }
+                                                Err(_) => {
+                                                    payload_dict.clone()
+                                                }
+                                            }
                                         }
                                     }
                                 } else {
-                                    payload_dict.clone()
+                                    if let Ok(model_validate) = model_class.getattr("model_validate") {
+                                        match model_validate.call1((payload_dict.clone(),)) {
+                                            Ok(model_obj) => {
+                                                debug!("Successfully instantiated payload model via model_validate (PyAny): {}", payload_type_name);
+                                                model_obj.into_any()
+                                            }
+                                            Err(e) => {
+                                                debug!("model_validate failed for {} (PyAny): {}", payload_type_name, e);
+                                                payload_dict.clone()
+                                            }
+                                        }
+                                    } else {
+                                        payload_dict.clone()
+                                    }
                                 }
                             }
-                        }
-                        Err(e) => {
-                            debug!("Failed to get model class {} from module: {}", payload_type_name, e);
-                            payload_dict.clone()
+                            Err(e) => {
+                                debug!("Failed to get model class {} from module: {}", payload_type_name, e);
+                                payload_dict.clone()
+                            }
                         }
                     }
-                }
-                Err(e) => {
-                    debug!("Failed to import model module {}: {}", model_module_path, e);
-                    payload_dict.clone()
+                    Err(e) => {
+                        debug!("Failed to import model module {}: {}", model_module_path, e);
+                        payload_dict.clone()
+                    }
                 }
             }
         } else {
@@ -482,8 +536,17 @@ impl PythonRuntime {
                                     let json_str_direct = serde_json::to_string(&context.payload)
                                         .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
                                     let payload_for_direct = json_module.call_method1("loads", (json_str_direct,))?;
+                                    let payload_for_direct_value = if let Some(payload_type_name) = payload_type {
+                                        if Self::is_primitive_type(payload_type_name) {
+                                            Self::extract_primitive_value(py, &payload_for_direct, payload_type_name)?
+                                        } else {
+                                            payload_for_direct
+                                        }
+                                    } else {
+                                        payload_for_direct
+                                    };
                                     let event_dict2 = PyDict::new(py);
-                                    event_dict2.set_item("payload", payload_for_direct)?;
+                                    event_dict2.set_item("payload", payload_for_direct_value)?;
                                     event_dict2.set_item("timestamp", &now_clone)?;
                                     event_dict_for_direct = Some(event_dict2);
                                 }
@@ -530,8 +593,17 @@ impl PythonRuntime {
         }
 
         debug!("Attempting final fallback instantiation for event: {} with dict payload", event_name);
+        let final_payload_value = if let Some(payload_type_name) = payload_type {
+            if Self::is_primitive_type(payload_type_name) {
+                Self::extract_primitive_value(py, &payload_dict_clone, payload_type_name)?
+            } else {
+                payload_dict_clone
+            }
+        } else {
+            payload_dict_clone
+        };
         let final_event_dict = PyDict::new(py);
-        final_event_dict.set_item("payload", payload_dict_clone)?;
+        final_event_dict.set_item("payload", final_payload_value)?;
         final_event_dict.set_item("timestamp", &now_clone)?;
         
         if let Ok(event_module) = py.import(&event_module_path) {
@@ -550,8 +622,17 @@ impl PythonRuntime {
                             let json_str_fallback2 = serde_json::to_string(&context.payload)
                                 .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
                             let payload_dict_fallback2 = json_module.call_method1("loads", (json_str_fallback2,))?;
+                            let payload_fallback2_value = if let Some(payload_type_name) = payload_type {
+                                if Self::is_primitive_type(payload_type_name) {
+                                    Self::extract_primitive_value(py, &payload_dict_fallback2, payload_type_name)?
+                                } else {
+                                    payload_dict_fallback2
+                                }
+                            } else {
+                                payload_dict_fallback2
+                            };
                             let final_dict2 = PyDict::new(py);
-                            final_dict2.set_item("payload", payload_dict_fallback2)?;
+                            final_dict2.set_item("payload", payload_fallback2_value)?;
                             final_dict2.set_item("timestamp", &now_clone)?;
                             final_dict_for_direct = Some(final_dict2);
                         }
