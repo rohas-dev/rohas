@@ -59,9 +59,11 @@ impl EventBus {
                     for handler_name in &handlers {
                         debug!("Executing handler: {}", handler_name);
 
-                        let mut handler_context = rohas_runtime::HandlerContext::new(handler_name, msg.payload.clone());
+                        let mut handler_context =
+                            rohas_runtime::HandlerContext::new(handler_name, msg.payload.clone());
                         handler_context = handler_context.with_metadata("event_name", &event_name);
-                        handler_context = handler_context.with_metadata("event_payload_type", &event_payload_type);
+                        handler_context = handler_context
+                            .with_metadata("event_payload_type", &event_payload_type);
 
                         match executor.execute_with_context(handler_context).await {
                             Ok(result) => {

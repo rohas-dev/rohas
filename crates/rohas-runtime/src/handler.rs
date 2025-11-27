@@ -82,7 +82,11 @@ impl HandlerResult {
         }
     }
 
-    pub fn with_trigger(mut self, event_name: impl Into<String>, payload: serde_json::Value) -> Self {
+    pub fn with_trigger(
+        mut self,
+        event_name: impl Into<String>,
+        payload: serde_json::Value,
+    ) -> Self {
         self.triggers.push(TriggeredEvent {
             event_name: event_name.into(),
             payload,
@@ -90,8 +94,13 @@ impl HandlerResult {
         self
     }
 
-    pub fn with_auto_trigger_payload(mut self, event_name: impl Into<String>, payload: serde_json::Value) -> Self {
-        self.auto_trigger_payloads.insert(event_name.into(), payload);
+    pub fn with_auto_trigger_payload(
+        mut self,
+        event_name: impl Into<String>,
+        payload: serde_json::Value,
+    ) -> Self {
+        self.auto_trigger_payloads
+            .insert(event_name.into(), payload);
         self
     }
 }

@@ -12,8 +12,8 @@ pub fn find_config_file(start_dir: &Path) -> Option<PathBuf> {
             .join(start_dir)
             .canonicalize()
             .ok()?
-    }; 
-    
+    };
+
     if current.is_file() {
         current = current.parent()?.to_path_buf();
     }
@@ -30,14 +30,14 @@ pub fn find_config_file(start_dir: &Path) -> Option<PathBuf> {
                 }
             }
         }
-    } 
+    }
 
     loop {
         let config_path = current.join("config").join("rohas.toml");
         if config_path.exists() {
             return Some(config_path);
         }
- 
+
         match current.parent() {
             Some(parent) => current = parent.to_path_buf(),
             None => break,

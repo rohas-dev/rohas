@@ -151,7 +151,15 @@ async fn api_handler(
         }
     }
 
-    execute_handler(state, handler_name, payload, query_params, api_triggers, api_name).await
+    execute_handler(
+        state,
+        handler_name,
+        payload,
+        query_params,
+        api_triggers,
+        api_name,
+    )
+    .await
 }
 
 fn method_matches(api_method: &HttpMethod, request_method: &axum::http::Method) -> bool {
@@ -212,7 +220,7 @@ async fn execute_handler(
 
     if result.success {
         let response_data = result.data.clone().unwrap_or(Value::Null);
-        
+
         for triggered_event in &result.triggers {
             if let Err(e) = state
                 .event_bus
@@ -227,13 +235,14 @@ async fn execute_handler(
                 );
             }
         }
-        
+
         for trigger in &api_triggers {
-            let payload = result.auto_trigger_payloads
+            let payload = result
+                .auto_trigger_payloads
                 .get(trigger)
                 .cloned()
-                .unwrap_or_else(|| response_data.clone());  
-            
+                .unwrap_or_else(|| response_data.clone());
+
             if let Err(e) = state.event_bus.emit(trigger, payload).await {
                 tracing::error!(
                     "Failed to emit auto-triggered event {} from API {}: {}",
@@ -243,7 +252,7 @@ async fn execute_handler(
                 );
             }
         }
-        
+
         Ok((StatusCode::OK, Json(response_data)).into_response())
     } else {
         Ok((

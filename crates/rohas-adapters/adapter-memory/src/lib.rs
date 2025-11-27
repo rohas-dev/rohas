@@ -212,5 +212,4 @@ mod tests {
         assert_eq!(messages.len(), 1);
         assert_eq!(messages[0]["value"], 42);
     }
- 
 }

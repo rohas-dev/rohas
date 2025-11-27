@@ -24,26 +24,25 @@ pub async fn execute(
     let language = match lang.as_deref() {
         Some("typescript") | Some("ts") => Language::TypeScript,
         Some("python") | Some("py") => Language::Python,
-        None => {
-            match find_config_file(&std::env::current_dir().unwrap_or_default()) {
-                Some(config_path) => {
-                    match EngineConfig::from_file(&config_path) {
-                        Ok(config) => {
-                            info!("Using language from config: {:?}", config.language);
-                            engine_language_to_codegen_language(config.language)
-                        }
-                        Err(e) => {
-                            info!("Could not parse config file, defaulting to TypeScript: {}", e);
-                            Language::TypeScript
-                        }
-                    }
+        None => match find_config_file(&std::env::current_dir().unwrap_or_default()) {
+            Some(config_path) => match EngineConfig::from_file(&config_path) {
+                Ok(config) => {
+                    info!("Using language from config: {:?}", config.language);
+                    engine_language_to_codegen_language(config.language)
                 }
-                None => {
-                    info!("Config file not found, defaulting to TypeScript");
+                Err(e) => {
+                    info!(
+                        "Could not parse config file, defaulting to TypeScript: {}",
+                        e
+                    );
                     Language::TypeScript
                 }
+            },
+            None => {
+                info!("Config file not found, defaulting to TypeScript");
+                Language::TypeScript
             }
-        } 
+        },
         Some(other) => {
             anyhow::bail!("Unsupported language: {}", other);
         }

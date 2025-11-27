@@ -32,7 +32,10 @@ fn generate_model_content(model: &Model) -> String {
     content.push_str("}\n\n");
 
     // Generate zod schema
-    content.push_str(&format!("export const {}Schema = z.object({{\n", model.name));
+    content.push_str(&format!(
+        "export const {}Schema = z.object({{\n",
+        model.name
+    ));
     for field in &model.fields {
         let zod_type = field_type_to_zod(&field.field_type, field.optional);
         content.push_str(&format!("  {}: {},\n", field.name, zod_type));
@@ -43,7 +46,10 @@ fn generate_model_content(model: &Model) -> String {
         "export function is{}(obj: any): obj is {} {{\n",
         model.name, model.name
     ));
-    content.push_str(&format!("  return {}Schema.safeParse(obj).success;\n", model.name));
+    content.push_str(&format!(
+        "  return {}Schema.safeParse(obj).success;\n",
+        model.name
+    ));
     content.push_str("}\n");
 
     content
@@ -51,7 +57,7 @@ fn generate_model_content(model: &Model) -> String {
 
 fn field_type_to_zod(field_type: &rohas_parser::FieldType, optional: bool) -> String {
     use rohas_parser::FieldType;
-    
+
     let zod_type = match field_type {
         FieldType::Int | FieldType::Float => "z.number()".to_string(),
         FieldType::String => "z.string()".to_string(),
@@ -71,7 +77,6 @@ fn field_type_to_zod(field_type: &rohas_parser::FieldType, optional: bool) -> St
         zod_type
     }
 }
-
 
 pub fn generate_dtos(schema: &Schema, output_dir: &Path) -> Result<()> {
     let dto_dir = output_dir.join("generated/dto");
@@ -179,7 +184,10 @@ fn generate_api_content(api: &Api) -> String {
     content.push_str("}\n\n");
 
     // Generate zod schema for request
-    content.push_str(&format!("export const {}Schema = z.object({{\n", request_type));
+    content.push_str(&format!(
+        "export const {}Schema = z.object({{\n",
+        request_type
+    ));
     for param in &path_params {
         content.push_str(&format!("  {}: z.string(),\n", param));
     }
@@ -227,7 +235,10 @@ fn generate_api_content(api: &Api) -> String {
     } else {
         format!("{}Schema", api.response)
     };
-    content.push_str(&format!("export const {}Schema = z.object({{\n", response_type));
+    content.push_str(&format!(
+        "export const {}Schema = z.object({{\n",
+        response_type
+    ));
     content.push_str(&format!("  data: {},\n", response_zod_type));
     content.push_str("});\n\n");
 
@@ -354,9 +365,9 @@ fn generate_event_content(event: &Event) -> String {
     let mut content = String::new();
 
     content.push_str("import { z } from 'zod';\n");
-    
+
     let payload_is_primitive = is_primitive_type(&event.payload);
-    
+
     if payload_is_primitive {
         content.push_str("\n");
     } else {
@@ -381,7 +392,10 @@ fn generate_event_content(event: &Event) -> String {
 
     // Generate zod schema for event
     let payload_zod_type = payload_type_to_zod(&event.payload);
-    content.push_str(&format!("export const {}Schema = z.object({{\n", event.name));
+    content.push_str(&format!(
+        "export const {}Schema = z.object({{\n",
+        event.name
+    ));
     content.push_str(&format!("  payload: {},\n", payload_zod_type));
     content.push_str("  timestamp: z.date(),\n");
     content.push_str("});\n\n");
