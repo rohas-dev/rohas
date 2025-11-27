@@ -47,6 +47,10 @@ impl Parser {
                             let input = Self::parse_input(inner_pair)?;
                             schema.inputs.push(input);
                         }
+                        Rule::ws => {
+                            let ws = Self::parse_websocket(inner_pair)?;
+                            schema.websockets.push(ws);
+                        }
                         Rule::EOI => {}
                         _ => {
                             debug!("Unexpected rule: {:?}", inner_pair.as_rule());
@@ -336,6 +340,74 @@ impl Parser {
             }
         }
         Ok(items)
+    }
+
+    fn parse_websocket(pair: pest::iterators::Pair<Rule>) -> Result<WebSocket> {
+        let mut inner = pair.into_inner();
+        let name = inner
+            .next()
+            .ok_or_else(|| ParseError::InvalidApi("Missing websocket name".into()))?
+            .as_str()
+            .to_string();
+
+        let mut path = None;
+        let mut message = None;
+        let mut on_connect = Vec::new();
+        let mut on_message = Vec::new();
+        let mut on_disconnect = Vec::new();
+        let mut triggers = Vec::new();
+        let mut broadcast = false;
+
+        for prop in inner {
+            if prop.as_rule() == Rule::ws_property {
+                let prop_text = prop.as_str();
+                let mut prop_inner = prop.into_inner();
+
+                if let Some(key) = prop_inner.next() {
+                    match key.as_rule() {
+                        Rule::string => {
+                            if prop_text.starts_with("path:") {
+                                path = Some(key.as_str().trim_matches('"').to_string());
+                            }
+                        }
+                        Rule::ident => {
+                            if prop_text.starts_with("message:") {
+                                message = Some(key.as_str().to_string());
+                            }
+                        }
+                        Rule::handler_list => {
+                            if prop_text.starts_with("onConnect:") {
+                                on_connect = Self::parse_string_list(key)?;
+                            } else if prop_text.starts_with("onMessage:") {
+                                on_message = Self::parse_string_list(key)?;
+                            } else if prop_text.starts_with("onDisconnect:") {
+                                on_disconnect = Self::parse_string_list(key)?;
+                            }
+                        }
+                        Rule::trigger_list => {
+                            triggers = Self::parse_string_list(key)?;
+                        }
+                        Rule::boolean => {
+                            if prop_text.starts_with("broadcast:") {
+                                broadcast = key.as_str() == "true";
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+
+        Ok(WebSocket {
+            name,
+            path: path.ok_or_else(|| ParseError::InvalidApi("Missing path".into()))?,
+            message,
+            on_connect,
+            on_message,
+            on_disconnect,
+            triggers,
+            broadcast,
+        })
     }
 }
 

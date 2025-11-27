@@ -7,6 +7,7 @@ pub struct Schema {
     pub events: Vec<Event>,
     pub crons: Vec<Cron>,
     pub inputs: Vec<Input>,
+    pub websockets: Vec<WebSocket>,
 }
 
 impl Schema {
@@ -17,6 +18,7 @@ impl Schema {
             events: Vec::new(),
             crons: Vec::new(),
             inputs: Vec::new(),
+            websockets: Vec::new(),
         }
     }
 
@@ -46,6 +48,15 @@ impl Schema {
                 return Err(crate::ParseError::DuplicateDefinition(format!(
                     "Event '{}'",
                     event.name
+                )));
+            }
+        }
+
+        for websocket in &self.websockets {
+            if !names.insert(&websocket.name) {
+                return Err(crate::ParseError::DuplicateDefinition(format!(
+                    "WebSocket '{}'",
+                    websocket.name
                 )));
             }
         }
@@ -197,6 +208,18 @@ pub struct Cron {
 pub struct Input {
     pub name: String,
     pub fields: Vec<Field>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct WebSocket {
+    pub name: String,
+    pub path: String,
+    pub message: Option<String>,
+    pub on_connect: Vec<String>,
+    pub on_message: Vec<String>,
+    pub on_disconnect: Vec<String>,
+    pub triggers: Vec<String>,
+    pub broadcast: bool,
 }
 
 #[cfg(test)]

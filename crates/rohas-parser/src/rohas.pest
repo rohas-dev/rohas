@@ -4,7 +4,7 @@ WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
 COMMENT    = _{ "//" ~ (!"\n" ~ ANY)* ~ "\n" | "/*" ~ (!"*/" ~ ANY)* ~ "*/" }
 
 // Top-level schema
-schema = { SOI ~ (model | api | event | cron | input)* ~ EOI }
+schema = { SOI ~ (model | api | event | cron | input | ws)* ~ EOI }
 
 // Identifiers and literals
 ident   = @{ ASCII_ALPHA ~ (ASCII_ALPHANUMERIC | "_")* }
@@ -60,3 +60,15 @@ cron_property = {
 // Input definition (DTO)
 input       = { "input" ~ ident ~ "{" ~ input_field* ~ "}" }
 input_field = { ident ~ ":" ~ field_type ~ optional? }
+
+// WebSocket definition
+ws          = { "ws" ~ ident ~ "{" ~ ws_property* ~ "}" }
+ws_property = {
+    ("path:" ~ string)
+  | ("message:" ~ ident)
+  | ("onConnect:" ~ handler_list)
+  | ("onMessage:" ~ handler_list)
+  | ("onDisconnect:" ~ handler_list)
+  | ("triggers:" ~ trigger_list)
+  | ("broadcast:" ~ boolean)
+}
