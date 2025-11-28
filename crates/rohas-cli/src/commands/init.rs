@@ -1,7 +1,9 @@
 use anyhow::Result;
+use base64::{engine::general_purpose, Engine as _};
 use std::fs;
 use std::path::Path;
 use tracing::info;
+use uuid::Uuid;
 
 pub async fn execute(name: String, lang: String, _example: Option<String>) -> Result<()> {
     info!("Initializing new Rohas project: {}", name);
@@ -59,12 +61,10 @@ pub async fn execute(name: String, lang: String, _example: Option<String>) -> Re
 }
 "#;
 
-    fs::write(
-        project_dir.join("schema/events/user_events.ro"),
-        user_event,
-    )?;
+    fs::write(project_dir.join("schema/events/user_events.ro"), user_event)?;
 
     // Create rohas.toml
+    let workbench_api_key = generate_workbench_api_key();
     let config = format!(
         r#"[project]
 name = "{}"
@@ -79,8 +79,12 @@ enable_cors = true
 [adapter]
 type = "memory"
 buffer_size = 1000
+
+[workbench]
+api_key = "{}"
+allowed_origins = []
 "#,
-        name, lang
+        name, lang, workbench_api_key
     );
 
     fs::write(project_dir.join("config/rohas.toml"), config)?;
@@ -103,6 +107,11 @@ Rohas project initialized with {} handlers.
    rohas dev
    ```
 
+   Or start with workbench UI:
+   ```bash
+   rohas dev --workbench
+   ```
+
 3. Validate schema:
    ```bash
    rohas validate
@@ -123,6 +132,11 @@ Rohas project initialized with {} handlers.
     info!("  Run 'cd {}' to enter the project directory", name);
     info!("  Run 'rohas codegen' to generate code");
     info!("  Run 'rohas dev' to start the development server");
+    info!("  Run 'rohas dev --workbench' to start server with workbench UI");
 
     Ok(())
+}
+
+fn generate_workbench_api_key() -> String {
+    general_purpose::STANDARD.encode(Uuid::new_v4().into_bytes())
 }

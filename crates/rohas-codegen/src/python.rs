@@ -375,10 +375,7 @@ fn generate_websocket_content(ws: &WebSocket) -> String {
     content.push_str("    class Config:\n");
     content.push_str("        from_attributes = True\n\n");
 
-    content.push_str(&format!(
-        "class {}Connection(BaseModel):\n",
-        ws.name
-    ));
+    content.push_str(&format!("class {}Connection(BaseModel):\n", ws.name));
     content.push_str("    connection_id: str\n");
     content.push_str("    path: str\n");
     content.push_str("    connected_at: datetime\n\n");
@@ -388,7 +385,11 @@ fn generate_websocket_content(ws: &WebSocket) -> String {
     content
 }
 
-fn generate_websocket_handler_stub(ws: &WebSocket, handler_type: &str, handler_name: &str) -> String {
+fn generate_websocket_handler_stub(
+    ws: &WebSocket,
+    handler_type: &str,
+    handler_name: &str,
+) -> String {
     let mut content = String::new();
 
     content.push_str(&format!(
@@ -404,13 +405,14 @@ fn generate_websocket_handler_stub(ws: &WebSocket, handler_type: &str, handler_n
         "onConnect" => {
             content.push_str(&format!(
                 "async def {}(connection: {}Connection, state: State) -> Optional[{}Message]:\n",
-                handler_name,
-                ws.name,
-                ws.name
+                handler_name, ws.name, ws.name
             ));
             content.push_str("    # TODO: Implement onConnect handler\n");
-            content.push_str("    # Return a message to send to the client on connection, or None\n");
-            content.push_str(&format!("    print(f'Client connected: {{connection.connection_id}}')\n"));
+            content
+                .push_str("    # Return a message to send to the client on connection, or None\n");
+            content.push_str(&format!(
+                "    print(f'Client connected: {{connection.connection_id}}')\n"
+            ));
             content.push_str("    return None\n");
         }
         "onMessage" => {
@@ -423,19 +425,24 @@ fn generate_websocket_handler_stub(ws: &WebSocket, handler_type: &str, handler_n
             ));
             content.push_str("    # TODO: Implement onMessage handler\n");
             content.push_str("    # Return a message to send back to the client, or None\n");
-            content.push_str(&format!("    print(f'Received message: {{message.data}}')\n"));
+            content.push_str(&format!(
+                "    print(f'Received message: {{message.data}}')\n"
+            ));
             content.push_str("    # For auto-triggers (defined in schema triggers): use state.set_payload('EventName', {...})\n");
-            content.push_str("    # For manual triggers: use state.trigger_event('EventName', {...})\n");
+            content.push_str(
+                "    # For manual triggers: use state.trigger_event('EventName', {...})\n",
+            );
             content.push_str("    return None\n");
         }
         "onDisconnect" => {
             content.push_str(&format!(
                 "async def {}(connection: {}Connection, state: State) -> None:\n",
-                handler_name,
-                ws.name
+                handler_name, ws.name
             ));
             content.push_str("    # TODO: Implement onDisconnect handler\n");
-            content.push_str(&format!("    print(f'Client disconnected: {{connection.connection_id}}')\n"));
+            content.push_str(&format!(
+                "    print(f'Client disconnected: {{connection.connection_id}}')\n"
+            ));
         }
         _ => {}
     }
@@ -454,12 +461,80 @@ class TriggeredEvent(BaseModel):
     payload: Dict[str, Any]
 
 
+class Logger:
+    """Logger for handlers to emit structured logs."""
+    
+    def __init__(self, handler_name: str, log_fn: Any):
+        self._handler_name = handler_name
+        self._log_fn = log_fn
+    
+    def info(self, message: str, **kwargs: Any) -> None:
+        """Log an info message.
+        
+        Args:
+            message: Log message
+            **kwargs: Additional fields to include in the log
+        """
+        if self._log_fn:
+            self._log_fn("info", self._handler_name, message, kwargs)
+    
+    def error(self, message: str, **kwargs: Any) -> None:
+        """Log an error message.
+        
+        Args:
+            message: Log message
+            **kwargs: Additional fields to include in the log
+        """
+        if self._log_fn:
+            self._log_fn("error", self._handler_name, message, kwargs)
+    
+    def warning(self, message: str, **kwargs: Any) -> None:
+        """Log a warning message.
+        
+        Args:
+            message: Log message
+            **kwargs: Additional fields to include in the log
+        """
+        if self._log_fn:
+            self._log_fn("warn", self._handler_name, message, kwargs)
+    
+    def warn(self, message: str, **kwargs: Any) -> None:
+        """Log a warning message (alias for warning).
+        
+        Args:
+            message: Log message
+            **kwargs: Additional fields to include in the log
+        """
+        self.warning(message, **kwargs)
+    
+    def debug(self, message: str, **kwargs: Any) -> None:
+        """Log a debug message.
+        
+        Args:
+            message: Log message
+            **kwargs: Additional fields to include in the log
+        """
+        if self._log_fn:
+            self._log_fn("debug", self._handler_name, message, kwargs)
+    
+    def trace(self, message: str, **kwargs: Any) -> None:
+        """Log a trace message.
+        
+        Args:
+            message: Log message
+            **kwargs: Additional fields to include in the log
+        """
+        if self._log_fn:
+            self._log_fn("trace", self._handler_name, message, kwargs)
+
+
 class State:
     """Context object for handlers to trigger events and access runtime state."""
     
-    def __init__(self):
+    def __init__(self, handler_name: Optional[str] = None, log_fn: Optional[Any] = None):
         self._triggers: List[TriggeredEvent] = []
         self._auto_trigger_payloads: Dict[str, Dict[str, Any]] = {}
+        self.logger = Logger(handler_name or "unknown", log_fn)
     
     def trigger_event(self, event_name: str, payload: Dict[str, Any]) -> None:
         """Manually trigger an event with the given payload.
