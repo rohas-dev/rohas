@@ -54,9 +54,22 @@ impl EventBus {
                 let event_payload_type = event_payload_type.clone();
 
                 async move {
+                    let span = tracing::info_span!(
+                        "event_processing",
+                        event = %event_name,
+                    );
+                    let _enter = span.enter();
+                    
                     info!("Received event: {}", event_name);
 
                     for handler_name in &handlers {
+                        let handler_span = tracing::info_span!(
+                            "event_handler",
+                            handler = %handler_name,
+                            event = %event_name,
+                        );
+                        let _enter = handler_span.enter();
+                        
                         debug!("Executing handler: {}", handler_name);
 
                         let mut handler_context =

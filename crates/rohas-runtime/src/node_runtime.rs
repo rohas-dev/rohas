@@ -108,8 +108,9 @@ impl NodeRuntime {
 
     fn execute_js_code_sync(handler_code: &str, context: &HandlerContext) -> Result<HandlerResult> {
         let context_json = serde_json::to_string(context)?;
+        let handler_name = &context.handler_name;
 
-        let wrapper = Self::generate_wrapper(handler_code, &context_json);
+        let wrapper = Self::generate_wrapper(handler_code, &context_json, handler_name);
 
         let isolate = &mut v8::Isolate::new(v8::CreateParams::default());
         let scope = std::pin::pin!(HandleScope::new(isolate));
@@ -165,17 +166,78 @@ impl NodeRuntime {
 
         let result_str = json_result.to_rust_string_lossy(scope);
 
-        let handler_result: HandlerResult = serde_json::from_str(&result_str)?;
+        let mut result_value: serde_json::Value = serde_json::from_str(&result_str)?;
+        
+        if let Some(logs) = result_value.get("_rohas_logs").and_then(|v| v.as_array()) {
+            for log in logs {
+                if let (Some(level), Some(handler), Some(message)) = (
+                    log.get("level").and_then(|v| v.as_str()),
+                    log.get("handler").and_then(|v| v.as_str()),
+                    log.get("message").and_then(|v| v.as_str()),
+                ) {
+                    // Convert fields to HashMap
+                    let mut field_map = std::collections::HashMap::new();
+                    if let Some(fields) = log.get("fields") {
+                        if let Some(fields_obj) = fields.as_object() {
+                            for (key, value) in fields_obj {
+                                field_map.insert(key.clone(), format!("{:?}", value));
+                            }
+                        }
+                    }
+                    
+                    // Emit tracing event
+                    let span = tracing::span!(
+                        tracing::Level::INFO,
+                        "handler_log",
+                        handler = %handler
+                    );
+                    let _enter = span.enter();
+                    
+                    match level {
+                        "error" => tracing::error!(message = %message, ?field_map),
+                        "warn" => tracing::warn!(message = %message, ?field_map),
+                        "info" => tracing::info!(message = %message, ?field_map),
+                        "debug" => tracing::debug!(message = %message, ?field_map),
+                        "trace" => tracing::trace!(message = %message, ?field_map),
+                        _ => tracing::info!(message = %message, ?field_map),
+                    }
+                }
+            }
+        }
+        
+        let triggers: Vec<crate::handler::TriggeredEvent> = result_value
+            .get("_rohas_triggers")
+            .and_then(|v| serde_json::from_value(v.clone()).ok())
+            .unwrap_or_default();
+        
+        let auto_trigger_payloads = result_value
+            .get("_rohas_auto_trigger_payloads")
+            .and_then(|v| serde_json::from_value::<std::collections::HashMap<String, serde_json::Value>>(v.clone()).ok())
+            .unwrap_or_default();
+        
+        if let Some(obj) = result_value.as_object_mut() {
+            obj.remove("_rohas_logs");
+            obj.remove("_rohas_triggers");
+            obj.remove("_rohas_auto_trigger_payloads");
+        }
+        
+        let mut handler_result: HandlerResult = serde_json::from_value(result_value)?;
+        
+        handler_result.triggers = triggers;
+        handler_result.auto_trigger_payloads = auto_trigger_payloads;
 
         Ok(handler_result)
     }
 
-    fn generate_wrapper(handler_code: &str, context_json: &str) -> String {
+    fn generate_wrapper(handler_code: &str, context_json: &str, handler_name: &str) -> String {
         let context_escaped = context_json
             .replace('\\', "\\\\")
             .replace('\'', "\\'")
             .replace('\n', "\\n")
             .replace('\r', "\\r");
+        let handler_name_escaped = handler_name
+            .replace('\\', "\\\\")
+            .replace('\'', "\\'");
 
         format!(
             r#"
@@ -188,6 +250,77 @@ impl NodeRuntime {
             throw new Error('require() is not supported in V8 runtime: ' + id);
         }};
 
+        // Logging function that stores logs for later processing
+        const _rohas_logs = [];
+        const _rohas_log_fn = function(level, handler, message, fields) {{
+            _rohas_logs.push({{
+                level: level,
+                handler: handler,
+                message: message,
+                fields: fields || {{}},
+                timestamp: new Date().toISOString()
+            }});
+        }};
+
+        // State class for handlers
+        class Logger {{
+            constructor(handlerName, logFn) {{
+                this.handlerName = handlerName;
+                this.logFn = logFn;
+            }}
+            info(message, fields) {{
+                if (this.logFn) {{
+                    this.logFn("info", this.handlerName, message, fields || {{}});
+                }}
+            }}
+            error(message, fields) {{
+                if (this.logFn) {{
+                    this.logFn("error", this.handlerName, message, fields || {{}});
+                }}
+            }}
+            warning(message, fields) {{
+                if (this.logFn) {{
+                    this.logFn("warn", this.handlerName, message, fields || {{}});
+                }}
+            }}
+            warn(message, fields) {{
+                this.warning(message, fields);
+            }}
+            debug(message, fields) {{
+                if (this.logFn) {{
+                    this.logFn("debug", this.handlerName, message, fields || {{}});
+                }}
+            }}
+            trace(message, fields) {{
+                if (this.logFn) {{
+                    this.logFn("trace", this.handlerName, message, fields || {{}});
+                }}
+            }}
+        }}
+
+        class State {{
+            constructor(handlerName, logFn) {{
+                this.triggers = [];
+                this.autoTriggerPayloads = new Map();
+                this.logger = new Logger(handlerName || "unknown", logFn);
+            }}
+            triggerEvent(eventName, payload) {{
+                this.triggers.push({{ eventName, payload }});
+            }}
+            setPayload(eventName, payload) {{
+                this.autoTriggerPayloads.set(eventName, payload);
+            }}
+            getTriggers() {{
+                return [...this.triggers];
+            }}
+            getAutoTriggerPayload(eventName) {{
+                return this.autoTriggerPayloads.get(eventName);
+            }}
+            getAllAutoTriggerPayloads() {{
+                return new Map(this.autoTriggerPayloads);
+            }}
+        }}
+
         // Load handler code (CommonJS or plain)
         (function(exports, module, require) {{
             {}
@@ -195,6 +328,9 @@ impl NodeRuntime {
 
         // Parse context
         const context = JSON.parse('{}');
+
+        // Create State object with logging
+        const state = new State('{}', _rohas_log_fn);
 
         // Find handler function
         let handlerFn;
@@ -224,15 +360,24 @@ impl NodeRuntime {
             throw new Error('Handler not found: No exported function or global handler');
         }}
 
-        // Execute handler
-        const result = await handlerFn(context);
+        // Execute handler - pass state if handler accepts 2 parameters
+        let result;
+        const paramCount = handlerFn.length;
+        if (paramCount >= 2) {{
+            result = await handlerFn(context, state);
+        }} else {{
+            result = await handlerFn(context);
+        }}
 
-        // Return success result
+        // Return success result with logs
         return {{
             success: true,
             data: result,
             error: null,
-            execution_time_ms: 0
+            execution_time_ms: 0,
+            _rohas_logs: _rohas_logs,
+            _rohas_triggers: state.getTriggers(),
+            _rohas_auto_trigger_payloads: Object.fromEntries(state.getAllAutoTriggerPayloads())
         }};
     }} catch (error) {{
         // Return error result
@@ -245,7 +390,7 @@ impl NodeRuntime {
     }}
 }})()
 "#,
-            handler_code, context_escaped
+            handler_code, context_escaped, handler_name_escaped
         )
     }
 

@@ -1,6 +1,8 @@
+use base64::{engine::general_purpose, Engine as _};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
+use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EngineConfig {
@@ -11,6 +13,8 @@ pub struct EngineConfig {
     pub server: ServerConfig,
 
     pub adapter: AdapterConfig,
+
+    pub workbench: WorkbenchConfig,
 }
 
 impl Default for EngineConfig {
@@ -20,6 +24,7 @@ impl Default for EngineConfig {
             language: Language::TypeScript,
             server: ServerConfig::default(),
             adapter: AdapterConfig::default(),
+            workbench: WorkbenchConfig::default(),
         }
     }
 }
@@ -101,11 +106,34 @@ pub enum AdapterType {
     Sqs,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkbenchConfig {
+    pub api_key: String,
+    #[serde(default)]
+    pub allowed_origins: Vec<String>,
+}
+
+impl Default for WorkbenchConfig {
+    fn default() -> Self {
+        Self {
+            api_key: generate_api_key(),
+            allowed_origins: Vec::new(),
+        }
+    }
+}
+
+fn generate_api_key() -> String {
+    let bytes = Uuid::new_v4().into_bytes();
+    general_purpose::STANDARD.encode(bytes)
+}
+
 #[derive(Debug, Deserialize)]
 struct TomlConfig {
     project: TomlProject,
     server: TomlServer,
     adapter: TomlAdapter,
+    #[serde(default)]
+    workbench: Option<TomlWorkbench>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -131,6 +159,12 @@ struct TomlAdapter {
     buffer_size: usize,
 }
 
+#[derive(Debug, Deserialize)]
+struct TomlWorkbench {
+    api_key: Option<String>,
+    allowed_origins: Option<Vec<String>>,
+}
+
 impl TomlConfig {
     fn into_engine_config(self) -> anyhow::Result<EngineConfig> {
         let language = match self.project.language.to_lowercase().as_str() {
@@ -142,6 +176,15 @@ impl TomlConfig {
         let adapter_type = match self.adapter.adapter_type.to_lowercase().as_str() {
             "memory" => AdapterType::Memory,
             _ => anyhow::bail!("Unsupported adapter type: {}", self.adapter.adapter_type),
+        };
+
+        let workbench = if let Some(workbench) = self.workbench {
+            WorkbenchConfig {
+                api_key: workbench.api_key.unwrap_or_else(generate_api_key),
+                allowed_origins: workbench.allowed_origins.unwrap_or_default(),
+            }
+        } else {
+            WorkbenchConfig::default()
         };
 
         Ok(EngineConfig {
@@ -156,6 +199,7 @@ impl TomlConfig {
                 adapter_type,
                 buffer_size: self.adapter.buffer_size,
             },
+            workbench,
         })
     }
 }

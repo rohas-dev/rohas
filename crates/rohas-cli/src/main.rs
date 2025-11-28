@@ -1,4 +1,6 @@
 use clap::{Parser, Subcommand};
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::util::SubscriberInitExt;
 use std::path::PathBuf;
 
 mod commands;
@@ -49,6 +51,12 @@ enum Commands {
 
         #[arg(long, default_value = "true")]
         watch: bool,
+
+        #[arg(long)]
+        workbench: bool,
+
+        #[arg(long)]
+        workbench_dev: bool,
     },
 
     ListHandlers {
@@ -64,13 +72,32 @@ enum Commands {
     Version,
 }
 
+use std::sync::Arc;
+use tracing_subscriber::reload::Handle;
+
+static TRACING_LOG_LAYER_HANDLE: std::sync::OnceLock<Arc<Handle<Option<rohas_engine::TracingLogLayer>, tracing_subscriber::Registry>>> = std::sync::OnceLock::new();
+
+pub fn register_tracing_log_layer(layer: rohas_engine::TracingLogLayer) -> anyhow::Result<()> {
+    if let Some(handle) = TRACING_LOG_LAYER_HANDLE.get() {
+        handle.reload(Some(layer))?;
+    }
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
-        )
+    let env_filter = tracing_subscriber::EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"));
+    
+    let (custom_layer, reload_handle) = tracing_subscriber::reload::Layer::new(None::<rohas_engine::TracingLogLayer>);
+    
+    let _ = TRACING_LOG_LAYER_HANDLE.set(Arc::new(reload_handle.clone()));
+    rohas_engine::tracing_log::set_tracing_layer_handle(Arc::new(reload_handle));
+    
+    tracing_subscriber::registry()
+        .with(custom_layer)
+        .with(env_filter)
+        .with(tracing_subscriber::fmt::Layer::default())
         .init();
 
     let cli = Cli::parse();
@@ -97,8 +124,10 @@ async fn main() -> anyhow::Result<()> {
             schema,
             port,
             watch,
+            workbench,
+            workbench_dev,
         } => {
-            commands::dev::execute(schema, port, watch).await?;
+            commands::dev::execute(schema, port, watch, workbench, workbench_dev).await?;
         }
         Commands::ListHandlers { schema } => {
             commands::list::list_handlers(schema).await?;

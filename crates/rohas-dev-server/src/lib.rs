@@ -128,6 +128,13 @@ impl DevServer {
         };
 
         let engine = Engine::from_schema(schema, self.config.clone()).await?;
+ 
+        let layer = engine.create_tracing_log_layer();
+        if let Err(e) = rohas_engine::tracing_log::register_tracing_log_layer(layer) {
+            warn!("Failed to register tracing log layer: {}", e);
+        } else {
+            info!("✓ Tracing log layer registered");
+        }
 
         engine.initialize().await?;
 

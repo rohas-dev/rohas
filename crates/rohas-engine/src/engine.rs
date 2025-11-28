@@ -20,6 +20,8 @@ pub struct Engine {
     event_bus: Arc<EventBus>,
     scheduler: Arc<Scheduler>,
     adapter: Arc<MemoryAdapter>,
+    trace_store: Arc<crate::trace::TraceStore>,
+    tracing_log_store: Arc<crate::tracing_log::TracingLogStore>,
     initialized: Arc<RwLock<bool>>,
 }
 
@@ -55,6 +57,8 @@ impl Engine {
         ));
 
         let scheduler = Arc::new(Scheduler::new());
+        let trace_store = Arc::new(crate::trace::TraceStore::new(1000)); // Keep last 1000 traces
+        let tracing_log_store = Arc::new(crate::tracing_log::TracingLogStore::new(1000)); // Keep last 1000 logs
 
         Ok(Self {
             config,
@@ -63,6 +67,8 @@ impl Engine {
             event_bus,
             scheduler,
             adapter,
+            trace_store,
+            tracing_log_store,
             initialized: Arc::new(RwLock::new(false)),
         })
     }
@@ -163,6 +169,8 @@ impl Engine {
             self.schema.clone(),
             arc_config,
             self.event_bus.clone(),
+            self.trace_store.clone(),
+            self.tracing_log_store.clone(),
         );
 
         if self.config.server.enable_cors {
@@ -197,6 +205,14 @@ impl Engine {
     pub async fn clear_handler_cache(&self) -> Result<()> {
         self.executor.clear_handler_cache().await?;
         Ok(())
+    }
+
+    pub fn tracing_log_store(&self) -> Arc<crate::tracing_log::TracingLogStore> {
+        self.tracing_log_store.clone()
+    }
+
+    pub fn create_tracing_log_layer(&self) -> crate::tracing_log::TracingLogLayer {
+        crate::tracing_log::TracingLogLayer::new(self.tracing_log_store.clone())
     }
 }
 

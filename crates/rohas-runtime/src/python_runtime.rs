@@ -1,12 +1,53 @@
 use crate::error::{Result, RuntimeError};
 use crate::handler::{HandlerContext, HandlerResult};
 use pyo3::prelude::*;
-use pyo3::types::{PyDict, PyModule};
+use pyo3::types::{PyDict, PyModule, PyTuple};
 use rohas_codegen::templates;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use tokio::sync::RwLock;
 use tracing::{debug, info};
+
+#[pyclass]
+struct RohasLogFn {
+    handler_name: String,
+}
+
+#[pymethods]
+impl RohasLogFn {
+    fn __call__(
+        &self,
+        level: String,
+        handler: String,
+        message: String,
+        fields: Bound<'_, PyDict>,
+    ) -> PyResult<()> {
+        let mut field_map = std::collections::HashMap::new();
+        for (key, value) in fields.iter() {
+            let key_str = key.extract::<String>()?;
+            let value_str = format!("{:?}", value);
+            field_map.insert(key_str, value_str);
+        }
+        
+        let span = tracing::span!(
+            tracing::Level::INFO,
+            "handler_log",
+            handler = %handler
+        );
+        let _enter = span.enter();
+        
+        match level.as_str() {
+            "error" => tracing::error!(message = %message, ?field_map),
+            "warn" => tracing::warn!(message = %message, ?field_map),
+            "info" => tracing::info!(message = %message, ?field_map),
+            "debug" => tracing::debug!(message = %message, ?field_map),
+            "trace" => tracing::trace!(message = %message, ?field_map),
+            _ => tracing::info!(message = %message, ?field_map),
+        }
+        
+        Ok(())
+    }
+}
 
 pub struct PythonRuntime {
     modules: Arc<RwLock<std::collections::HashMap<String, Py<PyModule>>>>,
@@ -128,7 +169,13 @@ impl PythonRuntime {
 
         let state_module = py.import("generated.state")?;
         let state_class = state_module.getattr("State")?;
-        let state_obj = state_class.call0()?;
+        
+        let log_fn_instance = Py::new(py, RohasLogFn {
+            handler_name: handler_name.to_string(),
+        })?;
+        
+        let log_fn_py: PyObject = log_fn_instance.into();
+        let state_obj = state_class.call1((handler_name, log_fn_py))?;
         let state_obj_for_triggers = state_obj.clone();
 
         let result = if param_count == 0 {
@@ -816,27 +863,28 @@ impl PythonRuntime {
             .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
         let json_module = py.import("json")?;
         let payload_dict = json_module.call_method1("loads", (json_str,))?;
-        let payload_dict = payload_dict.downcast::<PyDict>()
-            .map_err(|e| pyo3::exceptions::PyValueError::new_err(format!("Payload is not a dict: {}", e)))?;
+        let payload_dict = payload_dict.downcast::<PyDict>().map_err(|e| {
+            pyo3::exceptions::PyValueError::new_err(format!("Payload is not a dict: {}", e))
+        })?;
 
-
-        let ws_name = context.metadata
+        let ws_name = context
+            .metadata
             .get("websocket_name")
             .map(|s| s.as_str())
             .unwrap_or("HelloWorld");
-        
+
         let ws_name_snake = templates::to_snake_case(ws_name);
         let ws_module_path = format!("generated.websockets.{}", ws_name_snake);
- 
+
         let (connection_class, message_class) = match py.import(&ws_module_path) {
             Ok(ws_module) => {
                 let conn_class = ws_module.getattr(&format!("{}Connection", ws_name)).ok();
                 let msg_class = ws_module.getattr(&format!("{}Message", ws_name)).ok();
                 (conn_class, msg_class)
             }
-            Err(_) => (None, None)
+            Err(_) => (None, None),
         };
- 
+
         let connection_obj = if let Some(conn_class) = connection_class {
             if let Ok(connection_dict) = payload_dict.get_item("connection") {
                 if let Some(conn_dict) = connection_dict {
@@ -845,36 +893,46 @@ impl PythonRuntime {
                             if let Ok(conn_obj) = model_validate.call1((conn_dict,)) {
                                 conn_obj
                             } else {
-                                conn_class.call((), Some(conn_dict)).unwrap_or_else(|_| conn_dict.clone().into_any())
+                                conn_class
+                                    .call((), Some(conn_dict))
+                                    .unwrap_or_else(|_| conn_dict.clone().into_any())
                             }
                         } else {
-                            conn_class.call((), Some(conn_dict)).unwrap_or_else(|_| conn_dict.clone().into_any())
+                            conn_class
+                                .call((), Some(conn_dict))
+                                .unwrap_or_else(|_| conn_dict.clone().into_any())
                         }
                     } else {
                         conn_dict.clone().into_any()
                     }
                 } else {
- 
                     if let Ok(model_validate) = conn_class.getattr("model_validate") {
                         if let Ok(conn_obj) = model_validate.call1((payload_dict,)) {
                             conn_obj
                         } else {
-                            conn_class.call((), Some(payload_dict)).unwrap_or_else(|_| payload_dict.clone().into_any())
+                            conn_class
+                                .call((), Some(payload_dict))
+                                .unwrap_or_else(|_| payload_dict.clone().into_any())
                         }
                     } else {
-                        conn_class.call((), Some(payload_dict)).unwrap_or_else(|_| payload_dict.clone().into_any())
+                        conn_class
+                            .call((), Some(payload_dict))
+                            .unwrap_or_else(|_| payload_dict.clone().into_any())
                     }
                 }
             } else {
-
                 if let Ok(model_validate) = conn_class.getattr("model_validate") {
                     if let Ok(conn_obj) = model_validate.call1((payload_dict,)) {
                         conn_obj
                     } else {
-                        conn_class.call((), Some(payload_dict)).unwrap_or_else(|_| payload_dict.clone().into_any())
+                        conn_class
+                            .call((), Some(payload_dict))
+                            .unwrap_or_else(|_| payload_dict.clone().into_any())
                     }
                 } else {
-                    conn_class.call((), Some(payload_dict)).unwrap_or_else(|_| payload_dict.clone().into_any())
+                    conn_class
+                        .call((), Some(payload_dict))
+                        .unwrap_or_else(|_| payload_dict.clone().into_any())
                 }
             }
         } else {
@@ -890,10 +948,18 @@ impl PythonRuntime {
                                 if let Ok(msg_obj) = model_validate.call1((msg_dict,)) {
                                     Some(msg_obj)
                                 } else {
-                                    Some(msg_class.call((), Some(msg_dict)).unwrap_or_else(|_| msg_dict.clone().into_any()))
+                                    Some(
+                                        msg_class
+                                            .call((), Some(msg_dict))
+                                            .unwrap_or_else(|_| msg_dict.clone().into_any()),
+                                    )
                                 }
                             } else {
-                                Some(msg_class.call((), Some(msg_dict)).unwrap_or_else(|_| msg_dict.clone().into_any()))
+                                Some(
+                                    msg_class
+                                        .call((), Some(msg_dict))
+                                        .unwrap_or_else(|_| msg_dict.clone().into_any()),
+                                )
                             }
                         } else {
                             Some(msg_dict.clone().into_any())

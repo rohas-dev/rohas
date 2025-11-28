@@ -466,7 +466,7 @@ pub fn generate_websockets(schema: &Schema, output_dir: &Path) -> Result<()> {
         let file_name = format!("{}.ts", templates::to_snake_case(&ws.name));
         fs::write(ws_dir.join(file_name), content)?;
     }
- 
+
     let handlers_dir = output_dir.join("handlers/websockets");
     for ws in &schema.websockets {
         if !ws.on_connect.is_empty() {
@@ -523,7 +523,7 @@ fn generate_websocket_content(ws: &WebSocket) -> String {
     }
 
     content.push_str("\n");
- 
+
     if let Some(message_type) = &ws.message {
         let message_field_type = FieldType::from_str(message_type);
         let ts_type = message_field_type.to_typescript();
@@ -538,7 +538,10 @@ fn generate_websocket_content(ws: &WebSocket) -> String {
         } else {
             field_type_to_zod(&message_field_type, false)
         };
-        content.push_str(&format!("export const {}MessageSchema = z.object({{\n", ws.name));
+        content.push_str(&format!(
+            "export const {}MessageSchema = z.object({{\n",
+            ws.name
+        ));
         content.push_str(&format!("  data: {},\n", zod_type));
         content.push_str("  timestamp: z.date(),\n");
         content.push_str("});\n\n");
@@ -548,7 +551,10 @@ fn generate_websocket_content(ws: &WebSocket) -> String {
         content.push_str("  timestamp: Date;\n");
         content.push_str("}\n\n");
 
-        content.push_str(&format!("export const {}MessageSchema = z.object({{\n", ws.name));
+        content.push_str(&format!(
+            "export const {}MessageSchema = z.object({{\n",
+            ws.name
+        ));
         content.push_str("  data: z.any(),\n");
         content.push_str("  timestamp: z.date(),\n");
         content.push_str("});\n\n");
@@ -561,7 +567,10 @@ fn generate_websocket_content(ws: &WebSocket) -> String {
     content.push_str("  connectedAt: Date;\n");
     content.push_str("}\n\n");
 
-    content.push_str(&format!("export const {}ConnectionSchema = z.object({{\n", ws.name));
+    content.push_str(&format!(
+        "export const {}ConnectionSchema = z.object({{\n",
+        ws.name
+    ));
     content.push_str("  connectionId: z.string(),\n");
     content.push_str("  path: z.string(),\n");
     content.push_str("  connectedAt: z.date(),\n");
@@ -570,7 +579,11 @@ fn generate_websocket_content(ws: &WebSocket) -> String {
     content
 }
 
-fn generate_websocket_handler_stub(ws: &WebSocket, handler_type: &str, handler_name: &str) -> String {
+fn generate_websocket_handler_stub(
+    ws: &WebSocket,
+    handler_type: &str,
+    handler_name: &str,
+) -> String {
     let mut content = String::new();
 
     content.push_str(&format!(
@@ -590,8 +603,11 @@ fn generate_websocket_handler_stub(ws: &WebSocket, handler_type: &str, handler_n
                 ws.name
             ));
             content.push_str("  // TODO: Implement onConnect handler\n");
-            content.push_str("  // Return a message to send to the client on connection, or null\n");
-            content.push_str(&format!("  console.log('Client connected:', connection.connectionId);\n"));
+            content
+                .push_str("  // Return a message to send to the client on connection, or null\n");
+            content.push_str(&format!(
+                "  console.log('Client connected:', connection.connectionId);\n"
+            ));
             content.push_str("  return null;\n");
             content.push_str("}\n");
         }
@@ -605,9 +621,12 @@ fn generate_websocket_handler_stub(ws: &WebSocket, handler_type: &str, handler_n
             ));
             content.push_str("  // TODO: Implement onMessage handler\n");
             content.push_str("  // Return a message to send back to the client, or null\n");
-            content.push_str(&format!("  console.log('Received message:', message.data);\n"));
+            content.push_str(&format!(
+                "  console.log('Received message:', message.data);\n"
+            ));
             content.push_str("  // For auto-triggers (defined in schema triggers): use state.setPayload('EventName', {...})\n");
-            content.push_str("  // For manual triggers: use state.triggerEvent('EventName', {...})\n");
+            content
+                .push_str("  // For manual triggers: use state.triggerEvent('EventName', {...})\n");
             content.push_str("  return null;\n");
             content.push_str("}\n");
         }
@@ -618,7 +637,9 @@ fn generate_websocket_handler_stub(ws: &WebSocket, handler_type: &str, handler_n
                 ws.name
             ));
             content.push_str("  // TODO: Implement onDisconnect handler\n");
-            content.push_str(&format!("  console.log('Client disconnected:', connection.connectionId);\n"));
+            content.push_str(&format!(
+                "  console.log('Client disconnected:', connection.connectionId);\n"
+            ));
             content.push_str("}\n");
         }
         _ => {}
@@ -635,11 +656,109 @@ pub fn generate_state(output_dir: &Path) -> Result<()> {
 }
 
 /**
+ * Logger for handlers to emit structured logs.
+ */
+export class Logger {
+  private handlerName: string;
+  private logFn?: (level: string, handler: string, message: string, fields: Record<string, any>) => void;
+
+  constructor(handlerName: string, logFn?: (level: string, handler: string, message: string, fields: Record<string, any>) => void) {
+    this.handlerName = handlerName;
+    this.logFn = logFn;
+  }
+
+  /**
+   * Log an info message.
+   * 
+   * @param message - Log message
+   * @param fields - Additional fields to include in the log
+   */
+  info(message: string, fields?: Record<string, any>): void {
+    if (this.logFn) {
+      this.logFn("info", this.handlerName, message, fields || {});
+    } else {
+      console.log(`[${this.handlerName}] ${message}`, fields || {});
+    }
+  }
+
+  /**
+   * Log an error message.
+   * 
+   * @param message - Log message
+   * @param fields - Additional fields to include in the log
+   */
+  error(message: string, fields?: Record<string, any>): void {
+    if (this.logFn) {
+      this.logFn("error", this.handlerName, message, fields || {});
+    } else {
+      console.error(`[${this.handlerName}] ${message}`, fields || {});
+    }
+  }
+
+  /**
+   * Log a warning message.
+   * 
+   * @param message - Log message
+   * @param fields - Additional fields to include in the log
+   */
+  warning(message: string, fields?: Record<string, any>): void {
+    if (this.logFn) {
+      this.logFn("warn", this.handlerName, message, fields || {});
+    } else {
+      console.warn(`[${this.handlerName}] ${message}`, fields || {});
+    }
+  }
+
+  /**
+   * Log a warning message (alias for warning).
+   * 
+   * @param message - Log message
+   * @param fields - Additional fields to include in the log
+   */
+  warn(message: string, fields?: Record<string, any>): void {
+    this.warning(message, fields);
+  }
+
+  /**
+   * Log a debug message.
+   * 
+   * @param message - Log message
+   * @param fields - Additional fields to include in the log
+   */
+  debug(message: string, fields?: Record<string, any>): void {
+    if (this.logFn) {
+      this.logFn("debug", this.handlerName, message, fields || {});
+    } else {
+      console.debug(`[${this.handlerName}] ${message}`, fields || {});
+    }
+  }
+
+  /**
+   * Log a trace message.
+   * 
+   * @param message - Log message
+   * @param fields - Additional fields to include in the log
+   */
+  trace(message: string, fields?: Record<string, any>): void {
+    if (this.logFn) {
+      this.logFn("trace", this.handlerName, message, fields || {});
+    } else {
+      console.trace(`[${this.handlerName}] ${message}`, fields || {});
+    }
+  }
+}
+
+/**
  * Context object for handlers to trigger events and access runtime state.
  */
 export class State {
   private triggers: TriggeredEvent[] = [];
   private autoTriggerPayloads: Map<string, any> = new Map();
+  public logger: Logger;
+
+  constructor(handlerName?: string, logFn?: (level: string, handler: string, message: string, fields: Record<string, any>) => void) {
+    this.logger = new Logger(handlerName || "unknown", logFn);
+  }
 
   /**
    * Manually trigger an event with the given payload.
