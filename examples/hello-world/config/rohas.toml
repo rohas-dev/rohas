@@ -11,3 +11,7 @@ enable_cors = true
 [adapter]
 type = "memory"
 buffer_size = 1000
+
+[workbench]
+allowed_origins = []
+api_key = "FRmz/+AjTYCUFlBMio479A=="
