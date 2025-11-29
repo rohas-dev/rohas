@@ -1,5 +1,5 @@
 [project]
-name = "rohas-app"
+name = "hello-world"
 version = "0.1.0"
 description = "Rohas event-driven application"
 requires-python = ">=3.9"

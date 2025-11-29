@@ -8,6 +8,7 @@ license = { workspace = true }
 [dependencies]
 rohas-parser = { workspace = true }
 rohas-engine = { workspace = true }
+rohas-codegen = { workspace = true }
 
 tokio = { workspace = true }
 anyhow = { workspace = true }

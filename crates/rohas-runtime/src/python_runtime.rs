@@ -134,6 +134,15 @@ impl PythonRuntime {
             .and_then(|s| s.to_str())
             .ok_or_else(|| RuntimeError::ExecutionFailed("Invalid module name".into()))?;
 
+        // Hot-reload support for Python handlers:
+        // - Invalidate import caches
+        let importlib = py.import("importlib")?;
+        let _ = importlib.call_method0("invalidate_caches");
+
+        if let Ok(modules_dict) = sys.getattr("modules") {
+            let _ = modules_dict.del_item(module_name);
+        }
+
         let module = PyModule::import(py, module_name).map_err(|e| {
             RuntimeError::ExecutionFailed(format!("Failed to import module: {}", e))
         })?;
