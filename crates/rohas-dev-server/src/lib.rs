@@ -2,7 +2,8 @@ mod ts_compiler;
 
 use notify::RecursiveMode;
 use notify_debouncer_full::{new_debouncer, DebounceEventResult};
-use rohas_engine::{Engine, EngineConfig};
+use rohas_codegen::{self, Language as CodegenLanguage};
+use rohas_engine::{config::Language as EngineLanguage, Engine, EngineConfig};
 use rohas_parser::{Parser, Schema};
 use std::fs;
 use std::path::PathBuf;
@@ -127,6 +128,8 @@ impl DevServer {
             anyhow::bail!("Schema path not found: {}", self.schema_path.display());
         };
 
+        self.run_codegen(&schema)?;
+
         let engine = Engine::from_schema(schema, self.config.clone()).await?;
  
         let layer = engine.create_tracing_log_layer();
@@ -162,6 +165,7 @@ impl DevServer {
 
         let (tx, mut rx) = tokio::sync::mpsc::channel(100);
 
+        // Create debouncer and keep it alive for the entire duration
         let mut debouncer = new_debouncer(
             Duration::from_millis(500),
             None,
@@ -169,14 +173,23 @@ impl DevServer {
                 Ok(events) => {
                     for event in events {
                         if let Some(path) = event.paths.first() {
-                            let ext = path.extension().and_then(|e| e.to_str());
-                            if ext == Some("roh")
-                                || ext == Some("ts")
-                                || ext == Some("tsx")
-                                || ext == Some("py")
-                            {
-                                let _ =
-                                    tx.blocking_send((path.clone(), ext.unwrap_or("").to_string()));
+                            let ext = path
+                                .extension()
+                                .and_then(|e| e.to_str())
+                                .map(|s| s.to_ascii_lowercase());
+
+                            if let Some(ext_str) = ext.as_deref() {
+                                // Schema files trigger full engine reload
+                                if ext_str == "ro" || ext_str == "roh" {
+                                    if tx.blocking_send((path.clone(), ext_str.to_string())).is_err() {
+                                        error!("File watcher channel full, dropping event for: {}", path.display());
+                                    }
+                                }
+                                else if ext_str == "ts" || ext_str == "tsx" || ext_str == "py" {
+                                    if tx.blocking_send((path.clone(), ext_str.to_string())).is_err() {
+                                        error!("File watcher channel full, dropping event for: {}", path.display());
+                                    }
+                                }
                             }
                         }
                     }
@@ -191,66 +204,155 @@ impl DevServer {
 
         info!("Watching for changes in: {}", schema_dir.display());
 
-        if self.is_typescript_project() {
-            let src_dir = self.get_project_root().join("src");
-            if src_dir.exists() {
-                debouncer.watch(&src_dir, RecursiveMode::Recursive)?;
-                info!("Watching for TypeScript changes in: {}", src_dir.display());
-            }
+        let src_dir = self.get_project_root().join("src");
+        if src_dir.exists() {
+            debouncer.watch(&src_dir, RecursiveMode::Recursive)?;
+            info!("Watching for handler changes in: {}", src_dir.display());
         }
 
-        let ctrl_c = async {
-            tokio::signal::ctrl_c()
-                .await
-                .expect("Failed to install Ctrl+C handler");
-            info!("Received Ctrl+C signal, shutting down...");
+
+        let _debouncer_guard = debouncer;
+ 
+        let mut server_handle = {
+            let engine = self.engine.clone();
+            Some(tokio::spawn(async move {
+                if let Some(eng) = engine.read().await.as_ref() {
+                    if let Err(e) = eng.start_server().await {
+                        error!("Server error: {}", e);
+                    }
+                }
+            }))
         };
 
-        let engine = self.engine.clone();
-        let server_handle = tokio::spawn(async move {
-            if let Some(eng) = engine.read().await.as_ref() {
-                if let Err(e) = eng.start_server().await {
-                    error!("Server error: {}", e);
+ 
+        let reloading = Arc::new(tokio::sync::RwLock::new(false));
+
+        // Main event loop: respond to Ctrl+C and file changes.
+        loop {
+            tokio::select! {
+                _ = tokio::signal::ctrl_c() => {
+                    info!("Shutting down gracefully...");
+                    if let Some(handle) = &server_handle {
+                        handle.abort();
+                    }
+                    break;
                 }
-            }
-        });
+                maybe_msg = rx.recv() => {
+                    let Some((path, ext)) = maybe_msg else {
+                        error!("File watcher channel closed unexpectedly");
+                        break;
+                    };
 
-        tokio::select! {
-            _ = ctrl_c => {
-                info!("Shutting down gracefully...");
-                server_handle.abort();
-                return Ok(());
-            }
-            result = self.handle_file_changes(&mut rx) => {
-                result?;
-            }
-        }
+                    let should_process = {
+                        let is_reloading = reloading.read().await;
+                        if *is_reloading {
+                            info!("Ignoring file change during reload: {}", path.display());
+                            false
+                        } else {
+                            true
+                        }
+                    };
 
-        Ok(())
-    }
+                    if !should_process {
+                        continue;
+                    }
 
-    async fn handle_file_changes(
-        &self,
-        rx: &mut tokio::sync::mpsc::Receiver<(PathBuf, String)>,
-    ) -> anyhow::Result<()> {
-        while let Some((path, ext)) = rx.recv().await {
-            info!("File changed: {}", path.display());
+                    info!("File changed: {}", path.display());
 
-            if ext == "roh" {
-                warn!("Hot reload triggered - reloading engine...");
+                    let ext = ext.to_ascii_lowercase();
 
-                if let Err(e) = self.reload_engine().await {
-                    error!("Failed to reload engine: {}", e);
-                } else {
-                    info!("✓ Engine reloaded successfully");
-                }
-            } else if ext == "ts" || ext == "tsx" {
-                warn!("Handler file changed - recompiling...");
+                    if ext == "ro" || ext == "roh" {
+                        warn!("Hot reload triggered - reloading engine (and restarting server)...");
 
-                if let Err(e) = self.reload_typescript_handler().await {
-                    error!("Failed to reload handler: {}", e);
-                } else {
-                    info!("✓ Handler reloaded successfully");
+                        {
+                            let mut reloading_flag = reloading.write().await;
+                            *reloading_flag = true;
+                        }
+
+                        if let Some(handle) = server_handle.take() {
+                            info!("Stopping current HTTP server...");
+                            handle.abort();
+                            tokio::time::sleep(Duration::from_millis(500)).await;
+                            
+                            let _ = tokio::time::timeout(Duration::from_millis(100), handle).await;
+                        }
+
+                        let reload_result = self.reload_engine().await;
+                        
+                        {
+                            let mut reloading_flag = reloading.write().await;
+                            *reloading_flag = false;
+                        }
+
+                        match reload_result {
+                            Ok(_) => {
+                                info!("✓ Engine reloaded successfully");
+
+                                info!("Starting new HTTP server with updated schema...");
+                                let engine = self.engine.clone();
+                                let port = self.config.server.port;
+                                
+                                let new_handle = tokio::spawn(async move {
+                                    if let Some(eng) = engine.read().await.as_ref() {
+                                        if let Err(e) = eng.start_server().await {
+                                            error!("Server error: {}", e);
+                                        }
+                                    } else {
+                                        error!("Engine not available when starting server");
+                                    }
+                                });
+                                
+                                tokio::time::sleep(Duration::from_millis(200)).await;
+                                
+                                if !new_handle.is_finished() {
+                                    server_handle = Some(new_handle);
+                                    info!("✓ HTTP server restarted with new schema on port {}", port);
+                                } else {
+                                    match new_handle.await {
+                                        Ok(_) => {
+                                            error!("Server task completed unexpectedly - port may still be in use");
+                                            warn!("Try waiting a moment and changing a schema file again, or restart the dev server");
+                                        }
+                                        Err(e) => {
+                                            error!("Server task error: {}", e);
+                                        }
+                                    }
+                                }
+                                
+                                tokio::time::sleep(Duration::from_millis(100)).await;
+                            }
+                            Err(e) => {
+                                error!("Failed to reload engine: {}", e);
+                                warn!("Continuing to watch for changes...");
+                            }
+                        }
+                    } else if ext == "ts" || ext == "tsx" || ext == "py" {
+                        let path_str = path.to_string_lossy();
+                        let is_generated = path_str.contains("/generated/") || path_str.contains("\\generated\\");
+                        
+                        if is_generated {
+                            warn!("Generated file changed - clearing handler cache...");
+                            if let Some(eng) = self.engine.read().await.as_ref() {
+                                if let Err(e) = eng.clear_handler_cache().await {
+                                    error!("Failed to clear handler cache: {}", e);
+                                } else {
+                                    info!("✓ Handler cache cleared");
+                                }
+                            }
+                        } else {
+                            warn!("Handler file changed - reloading handler runtime...");
+
+                            match self.reload_typescript_handler().await {
+                                Ok(_) => {
+                                    info!("✓ Handler reloaded successfully");
+                                }
+                                Err(e) => {
+                                    error!("Failed to reload handler: {}", e);
+                                    warn!("Continuing to watch for changes...");
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -272,6 +374,27 @@ impl DevServer {
                 eng.clear_handler_cache().await?;
             }
         }
+
+        Ok(())
+    }
+
+    fn run_codegen(&self, schema: &Schema) -> anyhow::Result<()> {
+        let output_dir = self.config.project_root.join("src");
+
+        let lang = match self.config.language {
+            EngineLanguage::TypeScript => CodegenLanguage::TypeScript,
+            EngineLanguage::Python => CodegenLanguage::Python,
+        };
+
+        info!(
+            "Running codegen for language {:?} into {}",
+            lang,
+            output_dir.display()
+        );
+
+        rohas_codegen::generate(schema, &output_dir, lang)?;
+
+        info!("✓ Codegen completed");
 
         Ok(())
     }
