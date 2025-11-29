@@ -8,11 +8,13 @@ members = [
     "crates/rohas-cron",
     "crates/rohas-cli",
     "crates/rohas-dev-server",
+    "crates/rohas-telemetry",
     "crates/rohas-adapters/adapter-memory",
     "crates/rohas-adapters/adapter-nats",
     "crates/rohas-adapters/adapter-kafka",
     "crates/rohas-adapters/adapter-rabbitmq",
     "crates/rohas-adapters/adapter-sqs",
+    "crates/rohas-adapters/adapter-rocksdb",
 ]
 
 [workspace.package]
@@ -94,6 +96,8 @@ adapter-nats = { path = "crates/rohas-adapters/adapter-nats" }
 adapter-kafka = { path = "crates/rohas-adapters/adapter-kafka" }
 adapter-rabbitmq = { path = "crates/rohas-adapters/adapter-rabbitmq" }
 adapter-sqs = { path = "crates/rohas-adapters/adapter-sqs" }
+adapter-rocksdb = { path = "crates/rohas-adapters/adapter-rocksdb" }
+rohas-telemetry = { path = "crates/rohas-telemetry" }
 
 [profile.release]
 opt-level = 3
