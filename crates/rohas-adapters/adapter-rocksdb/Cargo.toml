@@ -1,0 +1,18 @@
+[package]
+name = "adapter-rocksdb"
+version = { workspace = true }
+edition = { workspace = true }
+authors = { workspace = true }
+license = { workspace = true }
+
+[dependencies]
+tokio = { workspace = true }
+rohas-telemetry = { workspace = true }
+rocksdb = "0.24.0"
+async-trait = "0.1"
+thiserror = { workspace = true }
+
+[dev-dependencies]
+tokio-test = "0.4"
+tempfile = "3.10"
+
