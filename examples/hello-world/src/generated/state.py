@@ -7,12 +7,80 @@ class TriggeredEvent(BaseModel):
     payload: Dict[str, Any]
 
 
+class Logger:
+    """Logger for handlers to emit structured logs."""
+    
+    def __init__(self, handler_name: str, log_fn: Any):
+        self._handler_name = handler_name
+        self._log_fn = log_fn
+    
+    def info(self, message: str, **kwargs: Any) -> None:
+        """Log an info message.
+        
+        Args:
+            message: Log message
+            **kwargs: Additional fields to include in the log
+        """
+        if self._log_fn:
+            self._log_fn("info", self._handler_name, message, kwargs)
+    
+    def error(self, message: str, **kwargs: Any) -> None:
+        """Log an error message.
+        
+        Args:
+            message: Log message
+            **kwargs: Additional fields to include in the log
+        """
+        if self._log_fn:
+            self._log_fn("error", self._handler_name, message, kwargs)
+    
+    def warning(self, message: str, **kwargs: Any) -> None:
+        """Log a warning message.
+        
+        Args:
+            message: Log message
+            **kwargs: Additional fields to include in the log
+        """
+        if self._log_fn:
+            self._log_fn("warn", self._handler_name, message, kwargs)
+    
+    def warn(self, message: str, **kwargs: Any) -> None:
+        """Log a warning message (alias for warning).
+        
+        Args:
+            message: Log message
+            **kwargs: Additional fields to include in the log
+        """
+        self.warning(message, **kwargs)
+    
+    def debug(self, message: str, **kwargs: Any) -> None:
+        """Log a debug message.
+        
+        Args:
+            message: Log message
+            **kwargs: Additional fields to include in the log
+        """
+        if self._log_fn:
+            self._log_fn("debug", self._handler_name, message, kwargs)
+    
+    def trace(self, message: str, **kwargs: Any) -> None:
+        """Log a trace message.
+        
+        Args:
+            message: Log message
+            **kwargs: Additional fields to include in the log
+        """
+        if self._log_fn:
+            self._log_fn("trace", self._handler_name, message, kwargs)
+
+
 class State:
     """Context object for handlers to trigger events and access runtime state."""
     
-    def __init__(self):
+    def __init__(self, handler_name: Optional[str] = None, log_fn: Optional[Any] = None):
         self._triggers: List[TriggeredEvent] = []
         self._auto_trigger_payloads: Dict[str, Dict[str, Any]] = {}
+        self.logger = Logger(handler_name or "unknown", log_fn)
     
     def trigger_event(self, event_name: str, payload: Dict[str, Any]) -> None:
         """Manually trigger an event with the given payload.
