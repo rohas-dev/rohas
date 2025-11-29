@@ -1,12 +1,14 @@
 use crate::ws;
 use axum::{
-    extract::{ws::WebSocketUpgrade, MatchedPath, Request, State},
+    extract::{ws::WebSocketUpgrade, ConnectInfo, MatchedPath, Request, State},
     http::StatusCode,
     middleware::Next,
     response::{IntoResponse, Response},
     routing::{delete, get, patch, post, put},
     Json, Router,
 };
+use std::net::SocketAddr;
+use chrono::Utc;
 use rohas_codegen::templates;
 use rohas_parser::{HttpMethod, Schema};
 use rohas_runtime::Executor;
@@ -22,7 +24,7 @@ pub struct ApiState {
     pub schema: Arc<Schema>,
     pub config: Arc<EngineConfig>,
     pub event_bus: Arc<crate::event::EventBus>,
-    pub trace_store: Arc<crate::trace::TraceStore>,
+    pub trace_store: Arc<crate::telemetry::TraceStore>,
     pub tracing_log_store: Arc<crate::tracing_log::TracingLogStore>,
     pub workbench_auth: Arc<tokio::sync::RwLock<crate::workbench_auth::WorkbenchAuthConfig>>,
 }
@@ -32,7 +34,7 @@ pub fn build_router(
     schema: Arc<Schema>,
     config: Arc<EngineConfig>,
     event_bus: Arc<crate::event::EventBus>,
-    trace_store: Arc<crate::trace::TraceStore>,
+    trace_store: Arc<crate::telemetry::TraceStore>,
     tracing_log_store: Arc<crate::tracing_log::TracingLogStore>,
 ) -> Router {
     let mut router = Router::new();
@@ -48,6 +50,7 @@ pub fn build_router(
         tracing_log_store,
         workbench_auth: workbench_auth.clone(),
     };
+    
 
     for api in &schema.apis {
         let route_path = normalize_path(&api.path);
@@ -133,6 +136,7 @@ async fn api_handler(
     State(state): State<ApiState>,
     matched_path: Option<MatchedPath>,
     method: axum::http::Method,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
     request: Request,
 ) -> Result<Response, ApiError> {
     let path_pattern = matched_path
@@ -152,6 +156,72 @@ async fn api_handler(
     let mut metadata = HashMap::new();
     metadata.insert("method".to_string(), method.to_string());
     metadata.insert("path".to_string(), path_pattern.to_string());
+    metadata.insert("datetime_utc".to_string(), Utc::now().to_rfc3339());
+
+    // Extract IP address - check headers first, then fall back to remote address from extensions
+    let ip_address = if let Some(ip) = request.headers().get("x-forwarded-for")
+        .and_then(|h| h.to_str().ok())
+        .and_then(|s| s.split(',').next())
+        .map(|s| s.trim().to_string())
+    {
+        Some(ip)
+    } else if let Some(ip) = request.headers().get("x-real-ip")
+        .and_then(|h| h.to_str().ok())
+        .map(|s| s.to_string())
+    {
+        Some(ip)
+    } else if let Some(ip) = request.headers().get("cf-connecting-ip")
+        .and_then(|h| h.to_str().ok())
+        .map(|s| s.to_string())
+    {
+        Some(ip)
+    } else {
+        // Fallback to remote address from ConnectInfo
+        Some(addr.ip().to_string())
+    };
+    
+    if let Some(ip) = ip_address {
+        metadata.insert("ip_address".to_string(), ip);
+    }
+    
+    if let Some(user_agent) = request.headers().get("user-agent")
+        .and_then(|h| h.to_str().ok())
+        .map(|s| s.to_string())
+    {
+        metadata.insert("user_agent".to_string(), user_agent);
+    }
+
+    if let Some(country) = request.headers().get("cf-ipcountry")
+        .and_then(|h| h.to_str().ok())
+        .map(|s| s.to_string())
+    {
+        metadata.insert("country".to_string(), country);
+    }
+
+    if let Some(city) = request.headers().get("cf-ipcity")
+        .and_then(|h| h.to_str().ok())
+        .map(|s| s.to_string())
+    {
+        metadata.insert("city".to_string(), city);
+    }
+    
+    if let Some(region) = request.headers().get("cf-region")
+        .and_then(|h| h.to_str().ok())
+        .map(|s| s.to_string())
+    {
+        metadata.insert("region".to_string(), region);
+    }
+
+    let mut location_parts = Vec::new();
+    if let Some(city) = metadata.get("city") {
+        location_parts.push(city.clone());
+    }
+    if let Some(region) = metadata.get("region") {
+        location_parts.push(region.clone());
+    }
+    if !location_parts.is_empty() {
+        metadata.insert("location".to_string(), location_parts.join(", "));
+    }
     
     let api_result = state
         .schema
