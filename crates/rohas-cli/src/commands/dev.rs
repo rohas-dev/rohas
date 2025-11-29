@@ -288,10 +288,20 @@ fn find_workbench_source() -> Result<Option<PathBuf>> {
         }
     }
 
-    let common_paths = [
-        PathBuf::from("/usr/local/lib/rohas/workbench"),
-        PathBuf::from("/opt/rohas/workbench"),
-    ];
+    let mut common_paths: Vec<PathBuf> = Vec::new();
+
+    // User-local install: ~/.rohas/workbench (Unix) or %USERPROFILE%\.rohas\workbench (Windows)
+    if let Ok(home) = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")) {
+        common_paths.push(PathBuf::from(home).join(".rohas").join("workbench"));
+    }
+
+    // Windows-specific: %LOCALAPPDATA%\rohas\workbench (when available)
+    if let Ok(local_app_data) = std::env::var("LOCALAPPDATA") {
+        common_paths.push(PathBuf::from(local_app_data).join("rohas").join("workbench"));
+    }
+
+    common_paths.push(PathBuf::from("/usr/local/lib/rohas/workbench"));
+    common_paths.push(PathBuf::from("/opt/rohas/workbench"));
 
     for path in &common_paths {
         if path.exists() && path.join("package.json").exists() {

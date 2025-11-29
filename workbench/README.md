@@ -1,6 +1,6 @@
-# Workbench
+# Workbench 
 
-Rohas Workbench is a Next.js dashboard that pairs generated Rohas projects with a modern shadcn/ui front-end. It automatically detects the nearest `config/rohas.toml`, parses your local schemas/handlers, and surfaces health signals without needing a backend service.
+Rohas Workbench is a Next.js dashboard that pairs generated Rohas projects with a modern shadcn/ui front-end. 
 
 ## Stack
 
@@ -11,21 +11,18 @@ Rohas Workbench is a Next.js dashboard that pairs generated Rohas projects with 
 
 ## Getting started
 
-```bash
-pnpm install
-pnpm dev
-```
-
-Visit http://localhost:3000 to view the dashboard. Updating schema files under `./schema` or handlers under `./src/handlers` immediately updates the inventory, because Workbench reads directly from disk on every request.
-
-## Scripts
+Use the `rohas` CLI to boot both the engine and the workbench from any project that has a `config/rohas.toml`:
 
 ```bash
-pnpm lint       # next lint (core-web-vitals rules)
-pnpm typecheck  # tsc --noEmit
-pnpm format     # prettier on src/**/*.{ts,tsx}
-pnpm build && pnpm start
+# Fastest feedback loop: Next.js dev server with hot reload
+cargo run --bin rohas -- dev --workbench-dev
+
+# Closer to production: builds the workbench and runs `next start`
+cargo run --bin rohas -- dev --workbench
 ```
+
+Then open `http://localhost:4401` in your browser. The workbench will automatically connect to the Rohas engine
+
 
 ## Project layout & routes
 
@@ -37,14 +34,3 @@ pnpm build && pnpm start
 - `src/stores/workbench-store.ts` – Zustand store for cross-route search & navigation state
 - `src/lib/project.ts` / `src/lib/workbench-data.ts` – filesystem helpers that discover schema, handler, and workflow assets
 
-Because the UI executes inside the same repo as the generated Rohas project, no network calls are required—Workbench renders everything from local state, which keeps the feedback loop fast even when offline.
-
-## Project root detection
-
-Workbench walks up from the app directory until it finds `config/rohas.toml`, which becomes the project root. Override this detection with:
-
-```bash
-ROHAS_PROJECT_ROOT=/absolute/path/to/project pnpm dev
-```
-
-The override is especially helpful when running the dashboard from a globally installed bundle or when the project structure deviates from the default generator layout.
