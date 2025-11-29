@@ -45,15 +45,6 @@ export function Header() {
       </div>
 
       <div className="flex w-full flex-col gap-3 md:w-auto md:flex-row md:items-center">
-        <div className="flex items-center rounded-full border px-3 py-1.5">
-          <Search className="mr-2 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="Search handlers, workflows, adapters..."
-            className="h-auto border-0 p-0 text-sm focus-visible:ring-0"
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-          />
-        </div>
         <div className="flex items-center justify-end gap-2">
           <ThemeToggle />
           <Button variant="outline" className="gap-2">
@@ -66,22 +57,6 @@ export function Header() {
               Notify me
             </Link>
           </Button>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Avatar className="cursor-pointer">
-                <AvatarFallback>RV</AvatarFallback>
-              </Avatar>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuLabel>Signed in as roh.dev</DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem>Profile</DropdownMenuItem>
-              <DropdownMenuItem>Integrations</DropdownMenuItem>
-              <DropdownMenuItem>Changelog</DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem className="text-destructive">Sign out</DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
         </div>
       </div>
     </header>
