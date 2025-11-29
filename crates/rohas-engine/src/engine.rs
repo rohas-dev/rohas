@@ -7,6 +7,7 @@ use adapter_memory::MemoryAdapter;
 use rohas_cron::{JobConfig, Scheduler};
 use rohas_parser::{Parser, Schema};
 use rohas_runtime::{Executor, RuntimeConfig};
+use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -20,8 +21,9 @@ pub struct Engine {
     event_bus: Arc<EventBus>,
     scheduler: Arc<Scheduler>,
     adapter: Arc<MemoryAdapter>,
-    trace_store: Arc<crate::trace::TraceStore>,
+    trace_store: Arc<crate::telemetry::TraceStore>,
     tracing_log_store: Arc<crate::tracing_log::TracingLogStore>,
+    telemetry: Arc<crate::telemetry::TelemetryManager>,
     initialized: Arc<RwLock<bool>>,
 }
 
@@ -48,17 +50,44 @@ impl Engine {
 
         let executor = Arc::new(Executor::new(runtime_config));
 
+        let telemetry_path = if config.telemetry.path.starts_with('/') {
+            PathBuf::from(&config.telemetry.path)
+        } else {
+            config.project_root.join(&config.telemetry.path)
+        };
+        
+        let telemetry = match config.telemetry.adapter_type {
+            crate::config::TelemetryAdapterType::RocksDB => {
+                Arc::new(
+                    crate::telemetry::TelemetryManager::new(telemetry_path, config.telemetry.retention_days)
+                        .await
+                        .map_err(|e| EngineError::Initialization(e.to_string()))?
+                )
+            }
+            crate::config::TelemetryAdapterType::Prometheus => {
+                return Err(EngineError::Initialization("Prometheus adapter not yet implemented".to_string()));
+            }
+            crate::config::TelemetryAdapterType::InfluxDB => {
+                return Err(EngineError::Initialization("InfluxDB adapter not yet implemented".to_string()));
+            }
+            crate::config::TelemetryAdapterType::TimescaleDB => {
+                return Err(EngineError::Initialization("TimescaleDB adapter not yet implemented".to_string()));
+            }
+        };
+        
+        let trace_store = Arc::new(crate::telemetry::TraceStore::new(telemetry.clone()));
+        let tracing_log_store = Arc::new(crate::tracing_log::TracingLogStore::new(1000)); // Keep last 1000 logs
+
         let adapter = Arc::new(MemoryAdapter::new(config.adapter.buffer_size));
 
         let event_bus = Arc::new(EventBus::new(
             adapter.clone(),
             executor.clone(),
             schema.clone(),
+            trace_store.clone(),
         ));
 
         let scheduler = Arc::new(Scheduler::new());
-        let trace_store = Arc::new(crate::trace::TraceStore::new(1000)); // Keep last 1000 traces
-        let tracing_log_store = Arc::new(crate::tracing_log::TracingLogStore::new(1000)); // Keep last 1000 logs
 
         Ok(Self {
             config,
@@ -69,6 +98,7 @@ impl Engine {
             adapter,
             trace_store,
             tracing_log_store,
+            telemetry,
             initialized: Arc::new(RwLock::new(false)),
         })
     }
@@ -84,6 +114,31 @@ impl Engine {
 
         self.event_bus.initialize().await?;
 
+        if self.config.telemetry.retention_days > 0 {
+            let telemetry = self.telemetry.clone();
+            let retention_days = self.config.telemetry.retention_days;
+            tokio::spawn(async move {
+                use tokio::time::{sleep, Duration};
+                let cleanup_interval = Duration::from_secs(3600);
+                loop {
+                    sleep(cleanup_interval).await;
+                    match telemetry.cleanup_old_traces().await {
+                        Ok(count) => {
+                            if count > 0 {
+                                info!("Cleaned up {} old traces (retention: {} days)", count, retention_days);
+                            }
+                        }
+                        Err(e) => {
+                            warn!("Failed to cleanup old traces: {}", e);
+                        }
+                    }
+                }
+            });
+            info!("Started telemetry cleanup task (retention: {} days)", retention_days);
+        } else {
+            info!("Telemetry retention disabled (retention_days = 0), traces will be kept forever");
+        }
+
         for cron in &self.schema.crons {
             let job_config = JobConfig::new(cron.name.clone(), cron.schedule.clone())
                 .with_triggers(cron.triggers.clone());
@@ -92,9 +147,11 @@ impl Engine {
             info!("Registered cron job: {} ({})", cron.name, job_id);
 
             let cron_name = cron.name.clone();
+            let cron_schedule = cron.schedule.clone();
             let executor = self.executor.clone();
             let event_bus = self.event_bus.clone();
             let triggers = cron.triggers.clone();
+            let trace_store = self.trace_store.clone();
 
             self.scheduler
                 .register_handler(&cron_name.clone(), move |_config| {
@@ -102,42 +159,116 @@ impl Engine {
                     let event_bus = event_bus.clone();
                     let triggers = triggers.clone();
                     let cron_name = cron_name.clone();
+                    let cron_schedule = cron_schedule.clone();
+                    let trace_store = trace_store.clone();
 
                     async move {
                         info!("Executing cron job: {}", cron_name);
 
-                        match executor.execute(&cron_name, serde_json::json!({})).await {
+                        let mut metadata: HashMap<String, String> = HashMap::new();
+                        metadata.insert("cron_name".to_string(), cron_name.clone());
+                        metadata.insert("schedule".to_string(), cron_schedule.clone());
+                        let trace_id = trace_store
+                            .start_trace(
+                                cron_name.clone(),
+                                crate::trace::TraceEntryType::Cron,
+                                metadata,
+                            )
+                            .await;
+
+                        let start = std::time::Instant::now();
+                        let exec_result = executor.execute(&cron_name, serde_json::json!({})).await;
+                        let duration_ms = start.elapsed().as_millis() as u64;
+
+                        match exec_result {
                             Ok(result) => {
+                                let mut triggered_events = Vec::new();
+
                                 if result.success {
                                     info!("Cron job completed: {}", cron_name);
 
                                     for trigger in &triggers {
-                                        if let Err(e) = event_bus
-                                            .emit(
-                                                trigger,
-                                                result
-                                                    .data
-                                                    .clone()
-                                                    .unwrap_or(serde_json::json!({})),
-                                            )
-                                            .await
-                                        {
+                                        let trigger_start = std::time::Instant::now();
+                                        let payload = result
+                                            .data
+                                            .clone()
+                                            .unwrap_or(serde_json::json!({}));
+                                        let emit_res = event_bus.emit(trigger, payload).await;
+                                        let trigger_duration =
+                                            trigger_start.elapsed().as_millis() as u64;
+                                        let trigger_timestamp = chrono::Utc::now().to_rfc3339();
+
+                                        if let Err(e) = emit_res {
                                             tracing::error!(
                                                 "Failed to emit event {}: {}",
                                                 trigger,
                                                 e
                                             );
                                         }
-                                    }
 
+                                        triggered_events.push(crate::trace::TriggeredEventInfo {
+                                            event_name: trigger.clone(),
+                                            timestamp: trigger_timestamp,
+                                            duration_ms: trigger_duration,
+                                        });
+                                    }
+                                }
+
+                                trace_store
+                                    .add_step_with_triggers(
+                                        &trace_id,
+                                        cron_name.clone(),
+                                        duration_ms
+                                            .max(result.execution_time_ms),
+                                        result.success,
+                                        result.error.clone(),
+                                        triggered_events,
+                                    )
+                                    .await;
+
+                                let status = if result.success {
+                                    crate::trace::TraceStatus::Success
+                                } else {
+                                    crate::trace::TraceStatus::Failed
+                                };
+
+                                trace_store
+                                    .complete_trace(&trace_id, status, result.error.clone())
+                                    .await;
+
+                                if result.success {
                                     Ok(())
                                 } else {
                                     Err(rohas_cron::CronError::ExecutionFailed(
-                                        result.error.unwrap_or_else(|| "Unknown error".to_string()),
+                                        result
+                                            .error
+                                            .unwrap_or_else(|| "Unknown error".to_string()),
                                     ))
                                 }
                             }
-                            Err(e) => Err(rohas_cron::CronError::ExecutionFailed(e.to_string())),
+                            Err(e) => {
+                                let err_msg = e.to_string();
+
+                                trace_store
+                                    .add_step(
+                                        &trace_id,
+                                        cron_name.clone(),
+                                        duration_ms,
+                                        false,
+                                        Some(err_msg.clone()),
+                                    )
+                                    .await;
+
+                                trace_store
+                                    .complete_trace(
+                                        &trace_id,
+                                        crate::trace::TraceStatus::Failed,
+                                        Some(err_msg.clone()),
+                                    )
+                                    .await;
+
+                                Err(rohas_cron::CronError::ExecutionFailed(err_msg))
+                            }
                         }
                     }
                 })
@@ -179,7 +310,10 @@ impl Engine {
 
         let listener = tokio::net::TcpListener::bind(addr).await?;
 
-        axum::serve(listener, router)
+        axum::serve(
+            listener,
+            router.into_make_service_with_connect_info::<SocketAddr>()
+        )
             .await
             .map_err(|e| EngineError::Api(e.to_string()))?;
 
