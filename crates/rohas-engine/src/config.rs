@@ -14,6 +14,8 @@ pub struct EngineConfig {
 
     pub adapter: AdapterConfig,
 
+    pub telemetry: TelemetryConfig,
+
     pub workbench: WorkbenchConfig,
 }
 
@@ -24,6 +26,7 @@ impl Default for EngineConfig {
             language: Language::TypeScript,
             server: ServerConfig::default(),
             adapter: AdapterConfig::default(),
+            telemetry: TelemetryConfig::default(),
             workbench: WorkbenchConfig::default(),
         }
     }
@@ -107,6 +110,69 @@ pub enum AdapterType {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TelemetryConfig {
+    #[serde(rename = "type")]
+    pub adapter_type: TelemetryAdapterType,
+    
+    #[serde(default = "default_telemetry_path")]
+    pub path: String,
+    
+    #[serde(default = "default_retention_days")]
+    pub retention_days: u32,
+    
+    #[serde(default = "default_max_cache_size")]
+    pub max_cache_size: usize,
+    
+    #[serde(default = "default_true")]
+    pub enable_metrics: bool,
+    
+    #[serde(default = "default_true")]
+    pub enable_logs: bool,
+    
+    #[serde(default = "default_true")]
+    pub enable_traces: bool,
+}
+
+fn default_telemetry_path() -> String {
+    ".rohas/telemetry".to_string()
+}
+
+fn default_retention_days() -> u32 {
+    30
+}
+
+fn default_max_cache_size() -> usize {
+    1000
+}
+
+fn default_true() -> bool {
+    true
+}
+
+impl Default for TelemetryConfig {
+    fn default() -> Self {
+        Self {
+            adapter_type: TelemetryAdapterType::RocksDB,
+            path: default_telemetry_path(),
+            retention_days: default_retention_days(),
+            max_cache_size: default_max_cache_size(),
+            enable_metrics: default_true(),
+            enable_logs: default_true(),
+            enable_traces: default_true(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum TelemetryAdapterType {
+    RocksDB,
+    Prometheus,
+    InfluxDB,
+    TimescaleDB,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkbenchConfig {
     pub api_key: String,
     #[serde(default)]
@@ -132,6 +198,8 @@ struct TomlConfig {
     project: TomlProject,
     server: TomlServer,
     adapter: TomlAdapter,
+    #[serde(default)]
+    telemetry: Option<TomlTelemetry>,
     #[serde(default)]
     workbench: Option<TomlWorkbench>,
 }
@@ -160,6 +228,18 @@ struct TomlAdapter {
 }
 
 #[derive(Debug, Deserialize)]
+struct TomlTelemetry {
+    #[serde(rename = "type")]
+    adapter_type: Option<String>,
+    path: Option<String>,
+    retention_days: Option<u32>,
+    max_cache_size: Option<usize>,
+    enable_metrics: Option<bool>,
+    enable_logs: Option<bool>,
+    enable_traces: Option<bool>,
+}
+
+#[derive(Debug, Deserialize)]
 struct TomlWorkbench {
     api_key: Option<String>,
     allowed_origins: Option<Vec<String>>,
@@ -176,6 +256,28 @@ impl TomlConfig {
         let adapter_type = match self.adapter.adapter_type.to_lowercase().as_str() {
             "memory" => AdapterType::Memory,
             _ => anyhow::bail!("Unsupported adapter type: {}", self.adapter.adapter_type),
+        };
+
+        let telemetry = if let Some(telemetry) = self.telemetry {
+            let adapter_type = match telemetry.adapter_type.as_deref().unwrap_or("rocksdb").to_lowercase().as_str() {
+                "rocksdb" => TelemetryAdapterType::RocksDB,
+                "prometheus" => TelemetryAdapterType::Prometheus,
+                "influxdb" => TelemetryAdapterType::InfluxDB,
+                "timescaledb" => TelemetryAdapterType::TimescaleDB,
+                _ => anyhow::bail!("Unsupported telemetry adapter type: {}", telemetry.adapter_type.unwrap_or_default()),
+            };
+            
+            TelemetryConfig {
+                adapter_type,
+                path: telemetry.path.unwrap_or_else(default_telemetry_path),
+                retention_days: telemetry.retention_days.unwrap_or_else(default_retention_days),
+                max_cache_size: telemetry.max_cache_size.unwrap_or_else(default_max_cache_size),
+                enable_metrics: telemetry.enable_metrics.unwrap_or_else(default_true),
+                enable_logs: telemetry.enable_logs.unwrap_or_else(default_true),
+                enable_traces: telemetry.enable_traces.unwrap_or_else(default_true),
+            }
+        } else {
+            TelemetryConfig::default()
         };
 
         let workbench = if let Some(workbench) = self.workbench {
@@ -199,6 +301,7 @@ impl TomlConfig {
                 adapter_type,
                 buffer_size: self.adapter.buffer_size,
             },
+            telemetry,
             workbench,
         })
     }
