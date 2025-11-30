@@ -1,5 +1,7 @@
 # Rohas (WIP)
 
+![Build Status](https://github.com/rohas-dev/rohas/actions/workflows/build.yml/badge.svg)
+
 **The events you know. Built for AI-powered applications.**
 
 Build scalable event-driven applications with schema-driven development. Python runtime support (fully support) with experimental TypeScript support, multiple event adapters, and powerful code generation.
