@@ -1,3 +1,4 @@
 cron DailyCleanup {
- schedule: "*/2 * * * * *"
+ schedule: "0 */5 * * * *"
+ triggers: [CleanupStep1, CleanupStep2]
 }
