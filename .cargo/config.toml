@@ -1,0 +1,5 @@
+# C++ runtime (libcmt) to force use of the dynamic runtime (msvcrt).
+[target.x86_64-pc-windows-msvc]
+rustflags = [
+    "-C", "link-arg=/NODEFAULTLIB:libcmt",
+]
