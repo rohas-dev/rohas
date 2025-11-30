@@ -6,6 +6,25 @@ use std::path::PathBuf;
 mod commands;
 mod utils;
 
+fn print_banner() {
+    let version = env!("CARGO_PKG_VERSION");
+    
+    println!();
+    println!("╔══════════════════════════════════════════════════════════════╗");
+    println!("║                                                              ║");
+    println!("║     ██████╗  ██████╗ ██╗  ██╗ █████╗ ███████╗               ║");
+    println!("║     ██╔══██╗██╔═══██╗██║  ██║██╔══██╗██╔════╝               ║");
+    println!("║     ██████╔╝██║   ██║███████║███████║███████╗               ║");
+    println!("║     ██╔══██╗██║   ██║██╔══██║██╔══██║╚════██║               ║");
+    println!("║     ██║  ██║╚██████╔╝██║  ██║██║  ██║███████║               ║");
+    println!("║     ╚═╝  ╚═╝ ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝╚══════╝               ║");
+    println!("║                                                              ║");
+    println!("║        Event-driven workflow orchestration framework         ║");
+    println!("║                        Version {}                        ║", version);
+    println!("╚══════════════════════════════════════════════════════════════╝");
+    println!();
+}
+
 #[derive(Parser)]
 #[command(name = "rohas")]
 #[command(about = "Rohas - Event-driven workflow orchestration framework", long_about = None)]
@@ -101,6 +120,10 @@ async fn main() -> anyhow::Result<()> {
         .init();
 
     let cli = Cli::parse();
+
+    if !matches!(cli.command, Commands::Version) {
+        print_banner();
+    }
 
     match cli.command {
         Commands::Init {
