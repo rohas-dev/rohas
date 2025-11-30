@@ -30,4 +30,7 @@ pub enum EngineError {
 
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
+
+    #[error("Initialization error: {0}")]
+    Initialization(String),
 }

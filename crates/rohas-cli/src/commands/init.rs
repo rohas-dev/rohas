@@ -80,6 +80,22 @@ enable_cors = true
 type = "memory"
 buffer_size = 1000
 
+[telemetry]
+# Telemetry adapter type: rocksdb (default), prometheus, influxdb, timescaledb
+type = "rocksdb"
+# Path to telemetry storage (relative to project root or absolute)
+path = ".rohas/telemetry"
+# Retention period for traces in days (0 = keep forever)
+retention_days = 30
+# Maximum number of traces to keep in memory cache
+max_cache_size = 1000
+# Enable metrics collection
+enable_metrics = true
+# Enable logs collection
+enable_logs = true
+# Enable traces collection
+enable_traces = true
+
 [workbench]
 api_key = "{}"
 allowed_origins = []

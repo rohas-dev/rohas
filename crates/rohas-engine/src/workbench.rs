@@ -217,8 +217,16 @@ async fn get_schema_graph(State(state): State<ApiState>) -> Result<Response, Wor
     Ok(Json(graph).into_response())
 }
 
-async fn get_traces(State(state): State<ApiState>) -> Result<Response, WorkbenchError> {
-    let traces = state.trace_store.get_traces(Some(100)).await;
+#[derive(Deserialize)]
+struct TracesQuery {
+    limit: Option<usize>,
+}
+
+async fn get_traces(
+    State(state): State<ApiState>,
+    Query(params): Query<TracesQuery>,
+) -> Result<Response, WorkbenchError> {
+    let traces = state.trace_store.get_traces(params.limit).await;
     
     let api_traces: Vec<TraceRecord> = traces
         .into_iter()

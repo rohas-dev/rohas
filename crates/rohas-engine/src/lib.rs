@@ -4,6 +4,7 @@ pub mod engine;
 pub mod error;
 pub mod event;
 pub mod router;
+pub mod telemetry;
 pub mod trace;
 pub mod tracing_log;
 pub mod workbench;
