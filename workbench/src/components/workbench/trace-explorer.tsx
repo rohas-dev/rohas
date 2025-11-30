@@ -2,8 +2,8 @@
 
 import "@xyflow/react/dist/style.css";
 
-import { useMemo, useState } from "react";
-import { ChevronDown, ChevronRight, Clock, CheckCircle2, XCircle, Zap, Globe, Webhook, Calendar } from "lucide-react";
+import { useMemo, useState, useEffect, memo } from "react";
+import { ChevronDown, ChevronRight, Clock, CheckCircle2, XCircle, Zap, Globe, Webhook, Calendar, Filter, X, Search } from "lucide-react";
 import {
   ReactFlow,
   ReactFlowProvider,
@@ -21,10 +21,14 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { cn } from "@/lib/utils";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { cn, formatNumber } from "@/lib/utils";
 import type { TraceRecord, TraceStep } from "@/lib/workbench-data";
 import { fetchTracingLogs, type TracingLogEntry } from "@/lib/workbench-data";
+import { TraceTimeline } from "./trace-timeline";
+import { useTimelineFiltersStore, type TraceType } from "@/stores/timeline-filters-store";
 
 const statusVariants: Record<
   TraceRecord["status"],
@@ -35,12 +39,176 @@ const statusVariants: Record<
   running: { label: "Running", className: "bg-amber-500/15 text-amber-600" },
 };
 
+// Memoized trace list item component
+const TraceListItem = memo(function TraceListItem({
+  trace,
+  isExpanded,
+  isSelected,
+  onSelect,
+  onToggleExpand,
+}: {
+  trace: TraceRecord;
+  isExpanded: boolean;
+  isSelected: boolean;
+  onSelect: () => void;
+  onToggleExpand: () => void;
+}) {
+  const statusMeta = statusVariants[trace.status];
+  
+  return (
+    <div
+      className={cn(
+        "transition-colors",
+        isSelected && "bg-muted/50"
+      )}
+    >
+      <div
+        onClick={onSelect}
+        className="cursor-pointer p-4 hover:bg-muted/40 transition-colors"
+      >
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 mb-1">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 w-6 p-0"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onToggleExpand();
+                }}
+              >
+                {isExpanded ? (
+                  <ChevronDown className="h-4 w-4" />
+                ) : (
+                  <ChevronRight className="h-4 w-4" />
+                )}
+              </Button>
+              <p className="font-medium text-foreground">{trace.entryPoint}</p>
+              <Badge variant="outline" className="text-xs capitalize">
+                {trace.entryType}
+              </Badge>
+              <span
+                className={`rounded-full px-2 py-0.5 text-xs font-semibold ${statusMeta.className}`}
+              >
+                {statusMeta.label}
+              </span>
+            </div>
+            <p className="text-xs text-muted-foreground ml-8">{trace.bucket}</p>
+            {trace.metadata && Object.keys(trace.metadata).length > 0 && (
+              <div className="ml-8 mt-1 flex flex-wrap gap-1">
+                {trace.entryType === "event" && trace.metadata.event_name && (
+                  <Badge variant="outline" className="text-[10px]">
+                    Event: {trace.metadata.event_name}
+                  </Badge>
+                )}
+                {trace.entryType === "cron" && trace.metadata.schedule && (
+                  <Badge variant="outline" className="text-[10px]">
+                    Schedule: {trace.metadata.schedule}
+                  </Badge>
+                )}
+                {trace.metadata.path && (
+                  <Badge variant="outline" className="text-[10px]">
+                    {trace.metadata.path}
+                  </Badge>
+                )}
+              </div>
+            )}
+            <div className="flex items-center gap-4 mt-2 ml-8 text-xs text-muted-foreground">
+              <span className="flex items-center gap-1">
+                <Clock className="h-3 w-3" />
+                {formatNumber(trace.durationMs)}ms
+              </span>
+              <span>{new Date(trace.startedAt).toLocaleTimeString()}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      {isExpanded && (
+        <TraceDetails trace={trace} />
+      )}
+    </div>
+  );
+}, (prevProps, nextProps) => {
+
+  return (
+    prevProps.trace.id === nextProps.trace.id &&
+    prevProps.trace.startedAt === nextProps.trace.startedAt &&
+    prevProps.trace.status === nextProps.trace.status &&
+    prevProps.isExpanded === nextProps.isExpanded &&
+    prevProps.isSelected === nextProps.isSelected
+  );
+});
+
+const MAX_RENDERED_TRACES_LIST = 200; // Limit rendered traces in list view
+
 export function TraceExplorer({ traces }: { traces: TraceRecord[] }) {
   const [selectedTraceId, setSelectedTraceId] = useState(traces[0]?.id ?? null);
   const [expandedTraces, setExpandedTraces] = useState<Set<string>>(new Set());
+  const [showListFilters, setShowListFilters] = useState(false);
+  const [listSearchQuery, setListSearchQuery] = useState("");
+  const [debouncedListSearchQuery, setDebouncedListSearchQuery] = useState("");
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedListSearchQuery(listSearchQuery);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [listSearchQuery]);
+ 
+  const {
+    selectedTypes: selectedTypesArray,
+    startTime,
+    endTime,
+    toggleType,
+    setStartTime,
+    setEndTime,
+    clearFilters,
+  } = useTimelineFiltersStore();
+
+  const selectedTypes = useMemo(() => new Set(selectedTypesArray), [selectedTypesArray]);
+
+  const filteredTraces = useMemo(() => {
+    let filtered = traces.filter((trace) => selectedTypes.has(trace.entryType));
+
+    if (debouncedListSearchQuery.trim()) {
+      const query = debouncedListSearchQuery.toLowerCase();
+      filtered = filtered.filter((trace) =>
+        trace.entryPoint.toLowerCase().includes(query) ||
+        trace.id.toLowerCase().includes(query) ||
+        trace.steps.some(step =>
+          step.name?.toLowerCase().includes(query) ||
+          step.handler_name.toLowerCase().includes(query)
+        )
+      );
+    }
+
+    if (startTime) {
+      const start = new Date(startTime).getTime();
+      filtered = filtered.filter((trace) => {
+        const traceStart = new Date(trace.startedAt).getTime();
+        return traceStart >= start;
+      });
+    }
+
+    if (endTime) {
+      const end = new Date(endTime).getTime();
+      filtered = filtered.filter((trace) => {
+        const traceStart = new Date(trace.startedAt).getTime();
+        return traceStart <= end;
+      });
+    }
+
+    return filtered.slice(0, MAX_RENDERED_TRACES_LIST);
+  }, [traces, selectedTypes, startTime, endTime, debouncedListSearchQuery]);
+
+  const hasActiveFilters =
+    selectedTypesArray.length < 4 || startTime !== "" || endTime !== "" || debouncedListSearchQuery !== "";
+
   const selectedTrace = useMemo(
-    () => traces.find((trace) => trace.id === selectedTraceId) ?? traces[0] ?? null,
-    [selectedTraceId, traces],
+    () => filteredTraces.find((trace) => trace.id === selectedTraceId) ?? filteredTraces[0] ?? null,
+    [selectedTraceId, filteredTraces],
   );
 
   const toggleExpand = (traceId: string) => {
@@ -60,75 +228,190 @@ export function TraceExplorer({ traces }: { traces: TraceRecord[] }) {
   }
 
   return (
+    <div className="space-y-6">
+      <Tabs defaultValue="timeline" className="w-full">
+        <TabsList className="grid w-full max-w-md grid-cols-2">
+          <TabsTrigger value="timeline">Timeline View</TabsTrigger>
+          <TabsTrigger value="list">List View</TabsTrigger>
+        </TabsList>
+        
+        <TabsContent value="timeline" className="mt-4">
+          <TraceTimeline traces={traces} />
+        </TabsContent>
+        
+        <TabsContent value="list" className="mt-4">
     <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_400px]">
       <Card>
         <CardHeader>
+                <div className="flex items-center justify-between">
+                  <div>
           <CardTitle>Trace inventory</CardTitle>
-          <CardDescription>Click a trace to inspect its details. Expand to see full route.</CardDescription>
+                    <CardDescription>
+                      Click a trace to inspect its details. Expand to see full route.
+                      {hasActiveFilters && (
+                        <Badge variant="secondary" className="ml-2">
+                          {formatNumber(filteredTraces.length)} of {formatNumber(traces.length)} traces
+                        </Badge>
+                      )}
+                    </CardDescription>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="relative">
+                      <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        type="text"
+                        placeholder="Search traces..."
+                        value={listSearchQuery}
+                        onChange={(e) => setListSearchQuery(e.target.value)}
+                        className="pl-8 h-8 w-48 text-xs"
+                      />
+                    </div>
+                    <Button
+                      variant={showListFilters ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => setShowListFilters(!showListFilters)}
+                    >
+                      <Filter className="h-4 w-4 mr-2" />
+                      Filters
+                      {hasActiveFilters && (
+                        <Badge variant="secondary" className="ml-2 h-4 px-1 text-[10px]">
+                          {selectedTypesArray.length < 4 ? "T" : ""}
+                          {(startTime || endTime) ? "D" : ""}
+                          {listSearchQuery ? "S" : ""}
+                        </Badge>
+                      )}
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Filter Panel */}
+                {showListFilters && (
+                  <div className="mt-4 p-4 border rounded-lg bg-muted/20 space-y-4">
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-sm font-semibold">Filters</h4>
+                      {hasActiveFilters && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            clearFilters();
+                            setListSearchQuery("");
+                          }}
+                          className="h-7 text-xs"
+                        >
+                          <X className="h-3 w-3 mr-1" />
+                          Clear
+                        </Button>
+                      )}
+                    </div>
+
+                    {/* Type Filters */}
+                    <div>
+                      <label className="text-xs font-medium text-muted-foreground mb-2 block">
+                        Trace Types
+                      </label>
+                      <div className="flex flex-wrap gap-2">
+                        {(["api", "event", "cron", "websocket"] as TraceType[]).map((type) => {
+                          const Icon = {
+                            api: Globe,
+                            event: Zap,
+                            cron: Calendar,
+                            websocket: Webhook,
+                          }[type];
+                          const isSelected = selectedTypes.has(type);
+                          return (
+                            <Button
+                              key={type}
+                              variant={isSelected ? "default" : "outline"}
+                              size="sm"
+                              onClick={() => toggleType(type)}
+                              className="h-8 text-xs"
+                            >
+                              {Icon && <Icon className="h-3 w-3 mr-1.5" />}
+                              {type.charAt(0).toUpperCase() + type.slice(1)}
+                            </Button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Date/Time Range Filters */}
+                    <div>
+                      <label className="text-xs font-medium text-muted-foreground mb-2 block">
+                        Time Range
+                      </label>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="text-xs font-medium text-muted-foreground mb-2 block">
+                            Start Time
+                          </label>
+                          <Input
+                            type="datetime-local"
+                            value={startTime}
+                            onChange={(e) => setStartTime(e.target.value)}
+                            className="h-8 text-xs"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-xs font-medium text-muted-foreground mb-2 block">
+                            End Time
+                          </label>
+                          <Input
+                            type="datetime-local"
+                            value={endTime}
+                            onChange={(e) => setEndTime(e.target.value)}
+                            className="h-8 text-xs"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
         </CardHeader>
         <CardContent className="p-0">
           <ScrollArea className="h-[600px]">
             <div className="divide-y">
-              {traces.map((trace) => {
-                const statusMeta = statusVariants[trace.status];
-                const isExpanded = expandedTraces.has(trace.id);
-                const isSelected = selectedTrace?.id === trace.id;
-                
-                return (
-                  <div
-                    key={trace.id}
-                    className={cn(
-                      "transition-colors",
-                      isSelected && "bg-muted/50"
-                    )}
-                  >
-                    <div
-                      onClick={() => setSelectedTraceId(trace.id)}
-                      className="cursor-pointer p-4 hover:bg-muted/40 transition-colors"
+              {filteredTraces.length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-[400px] text-center p-8">
+                  <Filter className="h-12 w-12 text-muted-foreground mb-4" />
+                  <h3 className="text-lg font-semibold mb-2">No traces match the filters</h3>
+                  <p className="text-sm text-muted-foreground mb-4">
+                    {hasActiveFilters
+                      ? "Try adjusting your filter criteria or clear filters to see all traces."
+                      : "No traces available."}
+                  </p>
+                  {hasActiveFilters && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        clearFilters();
+                        setListSearchQuery("");
+                      }}
                     >
-                      <div className="flex items-start justify-between gap-4">
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 mb-1">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-6 w-6 p-0"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                toggleExpand(trace.id);
-                              }}
-                            >
-                              {isExpanded ? (
-                                <ChevronDown className="h-4 w-4" />
-                              ) : (
-                                <ChevronRight className="h-4 w-4" />
-                              )}
-                            </Button>
-                            <p className="font-medium text-foreground">{trace.entryPoint}</p>
-                            <span
-                              className={`rounded-full px-2 py-0.5 text-xs font-semibold ${statusMeta.className}`}
-                            >
-                              {statusMeta.label}
-                            </span>
-                          </div>
-                          <p className="text-xs text-muted-foreground ml-8">{trace.bucket}</p>
-                          <div className="flex items-center gap-4 mt-2 ml-8 text-xs text-muted-foreground">
-                            <span className="flex items-center gap-1">
-                              <Clock className="h-3 w-3" />
-                              {trace.durationMs}ms
-                            </span>
-                            <span>{new Date(trace.startedAt).toLocaleTimeString()}</span>
-                          </div>
-                        </div>
-                      </div>
+                      Clear Filters
+                    </Button>
+                  )}
+                </div>
+              ) : (
+                <>
+                  {filteredTraces.map((trace) => (
+                    <TraceListItem
+                      key={trace.id}
+                      trace={trace}
+                      isExpanded={expandedTraces.has(trace.id)}
+                      isSelected={selectedTrace?.id === trace.id}
+                      onSelect={() => setSelectedTraceId(trace.id)}
+                      onToggleExpand={() => toggleExpand(trace.id)}
+                    />
+                  ))}
+                  {traces.filter((t) => selectedTypes.has(t.entryType)).length > MAX_RENDERED_TRACES_LIST && (
+                    <div className="p-4 text-center text-sm text-muted-foreground border-t">
+                      Showing first {formatNumber(MAX_RENDERED_TRACES_LIST)} of {formatNumber(traces.filter((t) => selectedTypes.has(t.entryType)).length)} filtered traces. Use filters to narrow down results.
                     </div>
-                    
-                    {isExpanded && (
-                      <TraceDetails trace={trace} />
-                    )}
-                  </div>
-                );
-              })}
+                  )}
+                </>
+              )}
             </div>
           </ScrollArea>
         </CardContent>
@@ -140,11 +423,14 @@ export function TraceExplorer({ traces }: { traces: TraceRecord[] }) {
             <CardTitle>{selectedTrace.entryPoint}</CardTitle>
             <CardDescription>
               Started {new Date(selectedTrace.startedAt).toLocaleTimeString()} •{" "}
-              {selectedTrace.durationMs}ms
+              {formatNumber(selectedTrace.durationMs)}ms
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4 text-sm">
-            <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <Badge variant="outline" className="capitalize">
+                      {selectedTrace.entryType}
+                    </Badge>
               <Badge variant="outline" className="capitalize">
                 {selectedTrace.bucket}
               </Badge>
@@ -191,6 +477,9 @@ export function TraceExplorer({ traces }: { traces: TraceRecord[] }) {
           </CardContent>
         </Card>
       )}
+          </div>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
@@ -348,7 +637,7 @@ function RoundNode({ data }: NodeProps) {
           )}
           {nodeData.duration !== undefined && (
             <div className={cn("text-muted-foreground", isTrigger ? "text-[10px]" : "text-xs")}>
-              {nodeData.duration}ms
+              {formatNumber(nodeData.duration)}ms
             </div>
           )}
         </div>
@@ -377,13 +666,22 @@ function TraceFlowVisualization({ trace }: { trace: TraceRecord }) {
     const horizontalSpacing = 200;
     const triggerOffsetY = 80;
 
+    let entrySubtitle = trace.entryType?.toUpperCase() || "ENTRY";
+    if (trace.entryType === "event" && trace.metadata?.event_name) {
+      entrySubtitle = `EVENT: ${trace.metadata.event_name}`;
+    } else if (trace.entryType === "cron" && trace.metadata?.schedule) {
+      entrySubtitle = `CRON: ${trace.metadata.schedule}`;
+    } else if (trace.metadata?.path) {
+      entrySubtitle = `${entrySubtitle} • ${trace.metadata.path}`;
+    }
+
     nodeList.push({
       id: "entry",
       type: "round",
       position: { x: xPosition, y: yPosition },
       data: {
         label: trace.entryPoint,
-        subtitle: trace.entryType?.toUpperCase() || "ENTRY",
+        subtitle: entrySubtitle,
         success: trace.status === "success",
         icon: entryTypeIcon,
         duration: trace.durationMs,
@@ -416,7 +714,7 @@ function TraceFlowVisualization({ trace }: { trace: TraceRecord }) {
             position: { x: xPosition, y: triggerY },
             data: {
               label: trigger.event_name,
-              subtitle: `${triggerTime} (${trigger.duration_ms}ms)`,
+              subtitle: `${triggerTime} (${formatNumber(trigger.duration_ms)}ms)`,
               success: true,
               icon: Zap,
               isTrigger: true,
@@ -531,7 +829,7 @@ function TraceStepDetail({ step }: { step: TraceStep; index: number }) {
           <div className="flex items-center gap-3 mt-2 ml-6 text-xs text-muted-foreground">
             <span className="flex items-center gap-1">
               <Clock className="h-3 w-3" />
-              {step.duration_ms}ms
+              {formatNumber(step.duration_ms)}ms
             </span>
             <span>{new Date(step.timestamp).toLocaleTimeString()}</span>
           </div>
@@ -556,7 +854,7 @@ function TraceStepDetail({ step }: { step: TraceStep; index: number }) {
                     <div className="flex items-center gap-2 text-xs text-muted-foreground">
                       <span>{new Date(event.timestamp).toLocaleTimeString()}</span>
                       <span className="text-muted-foreground/70">
-                        ({event.duration_ms}ms)
+                        ({formatNumber(event.duration_ms)}ms)
                       </span>
                     </div>
                   </div>

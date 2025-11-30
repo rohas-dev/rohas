@@ -49,3 +49,4 @@ coverage/
 
 # Rohas compiled output
 .rohas/
+src/generated/

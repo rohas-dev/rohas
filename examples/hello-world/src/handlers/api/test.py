@@ -24,12 +24,12 @@ async def handle_test(req: TestRequest, state: State) -> TestResponse:
     state.trigger_event('ManualTrigger', {
         'payload': 'Hello, world!'
     })
-    
+
     state.logger.info('Hello, world!')
     state.logger.error('Hello, world!')
     state.logger.warning('Hello, world!')
     state.logger.warn('Hello, world!')
     state.logger.debug('Hello, world!')
     state.logger.trace('Hello, world!')
- 
+
     return TestResponse(data="Hello, world!")

@@ -1,0 +1,57 @@
+event FastCompleted {
+  payload: Json
+  handler: [fast_completed]
+}
+
+event SlowCompleted {
+  payload: Json
+  handler: [slow_completed]
+}
+
+event VerySlowCompleted {
+  payload: Json
+  handler: [slow_completed]
+}
+
+event BottleneckDetected {
+  payload: Json
+  handler: [bottleneck_detected]
+}
+
+event MajorBottleneckDetected {
+  payload: Json
+  handler: [bottleneck_detected]
+}
+
+event ValidationComplete {
+  payload: Json
+}
+
+event ProcessingComplete {
+  payload: Json
+}
+
+event ExternalCallComplete {
+  payload: Json
+}
+
+event FinalizationComplete {
+  payload: Json
+}
+
+event CleanupStep1 {
+  payload: Json
+}
+
+event CleanupStep2 {
+  payload: Json
+}
+
+event BottleneckLogged {
+  payload: Json
+}
+
+event WelcomeEmailSent {
+  payload: Json
+}
+

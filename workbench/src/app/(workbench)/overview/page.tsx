@@ -1,6 +1,4 @@
-import Link from "next/link";
 import {
-  ArrowUpRight,
   GitBranch,
   Layers,
   PlugZap,
@@ -23,6 +21,7 @@ import { Separator } from "@/components/ui/separator";
 import { fetchWorkbenchData } from "@/lib/workbench-data";
 import type { ProjectConfig } from "@/lib/project";
 import type { ActivityItem } from "@/types/workbench";
+import { SystemMetrics } from "@/components/workbench/system-metrics";
 
 export const revalidate = 0;
 
@@ -74,29 +73,7 @@ export default async function OverviewPage() {
       </section>
 
       <section className="grid gap-6 lg:grid-cols-3">
-        <Card className="lg:col-span-2">
-          <CardHeader className="flex flex-row items-center justify-between">
-            <div>
-              <CardTitle>Workspace assets</CardTitle>
-              <CardDescription>
-                Parsed directly from your generated project at <code>{data.root}</code>.
-              </CardDescription>
-            </div>
-            <Button variant="outline" asChild>
-              <Link href="https://github.com/rohas-dev/rohas">
-                Documentation
-                <ArrowUpRight className="ml-1 h-4 w-4" />
-              </Link>
-            </Button>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm text-muted-foreground">
-              Run <code>rohas validate</code> after each schema edit to keep the project registry in
-              sync. Workbench re-reads the filesystem on every refresh, so this dashboard is always
-              current.
-            </p>
-          </CardContent>
-        </Card>
+        <SystemMetrics />
 
         <Card>
           <CardHeader>

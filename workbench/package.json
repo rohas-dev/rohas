@@ -33,6 +33,7 @@
     "react-dom": "19.2.0",
     "react-resizable-panels": "^3.0.6",
     "react-syntax-highlighter": "^16.1.0",
+    "recharts": "^3.5.1",
     "tailwind-merge": "^2.5.2",
     "tailwindcss-animate": "^1.0.7",
     "toml": "^3.0.0",

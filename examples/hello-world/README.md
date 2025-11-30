@@ -11,7 +11,7 @@ Rohas project initialized with python handlers.
 
 2. Start development server:
    ```bash
-   rohas dev
+   rohas dev --workbench
    ```
 
 3. Validate schema:

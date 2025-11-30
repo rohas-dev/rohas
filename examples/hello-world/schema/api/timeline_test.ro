@@ -1,0 +1,44 @@
+input TimelineTestFastInput {
+  test: String
+}
+
+api TimelineTestFast {
+  method: GET
+  path: "/timeline/fast"
+  response: String
+  triggers: [FastCompleted]
+}
+
+input TimelineTestSlowInput {
+  test: String
+}
+
+api TimelineTestSlow {
+  method: GET
+  path: "/timeline/slow"
+  response: String
+  triggers: [SlowCompleted, BottleneckDetected]
+}
+
+input TimelineTestVerySlowInput {
+  test: String
+}
+
+api TimelineTestVerySlow {
+  method: GET
+  path: "/timeline/very-slow"
+  response: String
+  triggers: [VerySlowCompleted, MajorBottleneckDetected]
+}
+
+input TimelineTestMultiStepInput {
+  test: String
+}
+
+api TimelineTestMultiStep {
+  method: GET
+  path: "/timeline/multi-step"
+  response: String
+  triggers: [ValidationComplete, ProcessingComplete, ExternalCallComplete, FinalizationComplete]
+}
+

@@ -7,7 +7,7 @@ const tasks = [
   {
     label: "Generate SDK",
     description: "Compile TypeScript clients based on the latest schema bundle.",
-    command: "rohas codegen --lang ts",
+    command: "rohas codegen",
   },
   {
     label: "Validate schema bundle",
