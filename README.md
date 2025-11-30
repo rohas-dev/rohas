@@ -46,6 +46,13 @@ rohas init my-app --lang python
 rohas init my-app --lang typescript
 ```
 
+### Run codegen
+
+```bash
+cd my-app
+rohas codegen
+```
+
 ### Start Development
 
 ```bash
