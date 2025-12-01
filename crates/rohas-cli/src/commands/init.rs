@@ -144,7 +144,7 @@ Rohas project initialized with {} handlers.
 
     fs::write(project_dir.join("README.md"), readme)?;
 
-    info!("✓ Project '{}' created successfully!", name);
+    info!("Project '{}' created successfully!", name);
     info!("  Run 'cd {}' to enter the project directory", name);
     info!("  Run 'rohas codegen' to generate code");
     info!("  Run 'rohas dev' to start the development server");

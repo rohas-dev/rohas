@@ -30,7 +30,7 @@ impl TypeScriptCompiler {
             anyhow::bail!("TypeScript compilation failed");
         }
 
-        info!("✓ TypeScript compilation completed");
+        info!("TypeScript compilation completed");
         Ok(())
     }
 
@@ -47,7 +47,7 @@ impl TypeScriptCompiler {
             .stderr(Stdio::inherit())
             .spawn()?;
 
-        info!("✓ TypeScript watch mode started");
+        info!("TypeScript watch mode started");
         self.watch_process = Some(child);
         Ok(())
     }
@@ -57,7 +57,7 @@ impl TypeScriptCompiler {
             info!("Stopping TypeScript watch mode...");
             child.kill()?;
             child.wait()?;
-            info!("✓ TypeScript watch mode stopped");
+            info!("TypeScript watch mode stopped");
         }
         Ok(())
     }
@@ -97,7 +97,7 @@ impl TypeScriptCompiler {
             anyhow::bail!("npm install failed");
         }
 
-        info!("✓ npm dependencies installed");
+        info!("npm dependencies installed");
         Ok(())
     }
 

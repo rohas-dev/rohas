@@ -316,7 +316,7 @@ async fn api_handler(
         &api_name,
     )
     .await;
- 
+
     if let Err(e) = middleware_result {
         state
             .trace_store
@@ -324,7 +324,7 @@ async fn api_handler(
             .await;
         return Err(ApiError::BadRequest(e));
     }
- 
+
     let (final_payload, final_query_params) = middleware_result.unwrap();
 
     let result = execute_handler(

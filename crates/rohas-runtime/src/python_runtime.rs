@@ -173,7 +173,19 @@ impl PythonRuntime {
             .unwrap_or(false);
 
         let function_name = if is_event_handler || is_websocket_handler {
-            handler_name.to_string()
+            let direct_name = handler_name.to_string();
+            let handle_name = format!("handle_{}", handler_name);
+            
+            match module.hasattr(handle_name.as_str()) {
+                Ok(true) => {
+                    debug!("Using function name '{}' for handler '{}'", handle_name, handler_name);
+                    handle_name
+                }
+                _ => {
+                    debug!("Using function name '{}' for handler '{}' (handle_ variant not found)", direct_name, handler_name);
+                    direct_name
+                }
+            }
         } else if is_middleware {
             format!("{}_middleware", templates::to_snake_case(handler_name))
         } else {

@@ -108,7 +108,7 @@ async fn find_or_init_workbench() -> Result<PathBuf> {
     match init_workbench().await {
         Ok(workbench_dir) => {
             if workbench_dir.exists() && workbench_dir.join("package.json").exists() {
-                info!("✓ Workbench initialized successfully");
+                info!("Workbench initialized successfully");
                 return Ok(workbench_dir);
             }
         }
@@ -223,7 +223,7 @@ async fn start_workbench(
             anyhow::bail!("Failed to build workbench");
         }
 
-        info!("✓ Workbench built successfully");
+        info!("Workbench built successfully");
 
         info!("Starting workbench server on port {}...", workbench_port);
 

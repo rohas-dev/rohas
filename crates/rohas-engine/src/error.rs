@@ -14,7 +14,7 @@ pub enum EngineError {
     Cron(#[from] rohas_cron::CronError),
 
     #[error("Adapter error: {0}")]
-    Adapter(#[from] adapter_memory::AdapterError),
+    Adapter(String),
 
     #[error("Configuration error: {0}")]
     Config(String),

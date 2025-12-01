@@ -77,7 +77,7 @@ pub async fn execute(
     // Generate code
     generate(&schema, &output_path, language)?;
 
-    info!("✓ Code generation completed successfully!");
+    info!("Code generation completed successfully!");
     info!("  Output directory: {}", output_path.display());
 
     Ok(())

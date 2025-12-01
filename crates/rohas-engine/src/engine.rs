@@ -1,9 +1,9 @@
+use crate::adapter::Adapter;
 use crate::api;
 use crate::config::EngineConfig;
 use crate::error::{EngineError, Result};
 use crate::event::EventBus;
 use crate::router;
-use adapter_memory::MemoryAdapter;
 use rohas_cron::{JobConfig, Scheduler};
 use rohas_parser::{Parser, Schema};
 use rohas_runtime::{Executor, RuntimeConfig};
@@ -20,7 +20,7 @@ pub struct Engine {
     executor: Arc<Executor>,
     event_bus: Arc<EventBus>,
     scheduler: Arc<Scheduler>,
-    adapter: Arc<MemoryAdapter>,
+    adapter: Arc<Adapter>,
     trace_store: Arc<crate::telemetry::TraceStore>,
     tracing_log_store: Arc<crate::tracing_log::TracingLogStore>,
     telemetry: Arc<crate::telemetry::TelemetryManager>,
@@ -78,7 +78,42 @@ impl Engine {
         let trace_store = Arc::new(crate::telemetry::TraceStore::new(telemetry.clone()));
         let tracing_log_store = Arc::new(crate::tracing_log::TracingLogStore::new(1000)); // Keep last 1000 logs
 
-        let adapter = Arc::new(MemoryAdapter::new(config.adapter.buffer_size));
+        // Create adapter based on configuration
+        let adapter = Arc::new(match &config.adapter.adapter_type {
+            crate::config::AdapterType::Memory => {
+                info!("Using Memory adapter for event bus");
+                Adapter::Memory(Arc::new(adapter_memory::MemoryAdapter::new(config.adapter.buffer_size)))
+            }
+            crate::config::AdapterType::Aws { region, aws_type, queue_prefix, event_bus_name, source } => {
+                info!("Initializing AWS adapter - region: {}, default type: {}", region, aws_type);
+                let adapter_type = match aws_type.as_str() {
+                    "sqs" => adapter_aws::AwsAdapterType::Sqs,
+                    "eventbridge" => adapter_aws::AwsAdapterType::EventBridge,
+                    _ => return Err(EngineError::Initialization(format!("Unsupported AWS adapter type: {}", aws_type))),
+                };
+                let aws_config = adapter_aws::AwsConfig {
+                    region: region.clone(),
+                    queue_prefix: queue_prefix.clone(),
+                    event_bus_name: event_bus_name.clone(),
+                    source: source.clone(),
+                    ..Default::default()
+                };
+                let aws_adapter = adapter_aws::AwsAdapter::new_with_both(adapter_type, aws_config)
+                    .await
+                    .map_err(|e| EngineError::Initialization(format!("Failed to initialize AWS adapter: {}", e)))?;
+                info!("AWS adapter (both SQS and EventBridge) initialized successfully with default type: {}", aws_type);
+                Adapter::Aws(Arc::new(aws_adapter))
+            }
+            crate::config::AdapterType::Nats { .. } => {
+                return Err(EngineError::Initialization("NATS adapter not yet implemented".to_string()));
+            }
+            crate::config::AdapterType::Kafka { .. } => {
+                return Err(EngineError::Initialization("Kafka adapter not yet implemented".to_string()));
+            }
+            crate::config::AdapterType::RabbitMQ { .. } => {
+                return Err(EngineError::Initialization("RabbitMQ adapter not yet implemented".to_string()));
+            }
+        });
 
         let event_bus = Arc::new(EventBus::new(
             adapter.clone(),
