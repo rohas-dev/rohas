@@ -11,6 +11,7 @@ rohas-runtime = { workspace = true }
 rohas-cron = { workspace = true }
 rohas-codegen = { workspace = true }
 adapter-memory = { workspace = true }
+adapter-aws = { workspace = true }
 rohas-telemetry = { workspace = true }
 adapter-rocksdb = { workspace = true }
 

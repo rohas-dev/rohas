@@ -238,6 +238,9 @@ impl NodeRuntime {
         let handler_name_escaped = handler_name
             .replace('\\', "\\\\")
             .replace('\'', "\\'");
+        let handle_name_escaped = format!("handle_{}", handler_name)
+            .replace('\\', "\\\\")
+            .replace('\'', "\\'");
 
         format!(
             r#"
@@ -341,23 +344,38 @@ impl NodeRuntime {
         }} else if (module.exports && typeof module.exports === 'object') {{
             // Try CommonJS exports (exports.handler or exports.handleXxx)
             const exportKeys = Object.keys(module.exports);
-
-            // Look for any exported function (handleXxx, handler, default)
-            for (const key of exportKeys) {{
-                if (typeof module.exports[key] === 'function') {{
-                    handlerFn = module.exports[key];
-                    break;
+            
+            // For event handlers, try "handle_<handler_name>" first, then any exported function
+            const handleName = '{}';
+            if (module.exports[handleName] && typeof module.exports[handleName] === 'function') {{
+                handlerFn = module.exports[handleName];
+            }} else {{
+                // Look for any exported function (handleXxx, handler, default)
+                for (const key of exportKeys) {{
+                    if (typeof module.exports[key] === 'function') {{
+                        handlerFn = module.exports[key];
+                        break;
+                    }}
                 }}
             }}
         }}
 
-        // Fallback to global handler function
-        if (!handlerFn && typeof handler !== 'undefined') {{
-            handlerFn = handler;
+        // Fallback to global handler function (try handle_<handler_name> first, then handler)
+        if (!handlerFn) {{
+            const handleName = '{}';
+            if (typeof window !== 'undefined' && typeof window[handleName] === 'function') {{
+                handlerFn = window[handleName];
+            }} else if (typeof global !== 'undefined' && typeof global[handleName] === 'function') {{
+                handlerFn = global[handleName];
+            }} else if (typeof {} !== 'undefined') {{
+                handlerFn = {};
+            }} else if (typeof handler !== 'undefined') {{
+                handlerFn = handler;
+            }}
         }}
 
         if (!handlerFn) {{
-            throw new Error('Handler not found: No exported function or global handler');
+            throw new Error('Handler not found: No exported function or global handler. Tried: {}, handler, and module.exports');
         }}
 
         // Execute handler - pass state if handler accepts 2 parameters
@@ -390,7 +408,7 @@ impl NodeRuntime {
     }}
 }})()
 "#,
-            handler_code, context_escaped, handler_name_escaped
+            handler_code, context_escaped, handler_name_escaped, handle_name_escaped, handle_name_escaped, handle_name_escaped, handle_name_escaped, handle_name_escaped
         )
     }
 

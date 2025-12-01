@@ -1,5 +1,5 @@
 [package]
-name = "adapter-sqs"
+name = "adapter-aws"
 version = { workspace = true }
 edition = { workspace = true }
 authors = { workspace = true }
@@ -8,6 +8,8 @@ license = { workspace = true }
 [dependencies]
 tokio = { workspace = true }
 aws-sdk-sqs = { workspace = true }
+aws-sdk-eventbridge = "1.9"
+aws-config = "1.1"
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }

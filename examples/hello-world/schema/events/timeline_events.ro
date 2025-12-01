@@ -1,11 +1,13 @@
 event FastCompleted {
   payload: Json
   handler: [fast_completed]
+  type: sqs
 }
 
 event SlowCompleted {
   payload: Json
   handler: [slow_completed]
+  type: sqs
 }
 
 event VerySlowCompleted {
@@ -16,6 +18,7 @@ event VerySlowCompleted {
 event BottleneckDetected {
   payload: Json
   handler: [bottleneck_detected]
+  type: sqs
 }
 
 event MajorBottleneckDetected {

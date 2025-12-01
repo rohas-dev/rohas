@@ -13,7 +13,7 @@ members = [
     "crates/rohas-adapters/adapter-nats",
     "crates/rohas-adapters/adapter-kafka",
     "crates/rohas-adapters/adapter-rabbitmq",
-    "crates/rohas-adapters/adapter-sqs",
+    "crates/rohas-adapters/adapter-aws",
     "crates/rohas-adapters/adapter-rocksdb",
 ]
 
@@ -70,6 +70,7 @@ async-nats = "0.45.0"
 rdkafka = { version = "0.38.0", features = ["cmake-build"] }
 lapin = "3.7.2"
 aws-sdk-sqs = "1.9"
+aws-sdk-eventbridge = "1.9"
 
 # Watching / Hot reload
 notify = "8.2.0"
@@ -95,7 +96,7 @@ adapter-memory = { path = "crates/rohas-adapters/adapter-memory" }
 adapter-nats = { path = "crates/rohas-adapters/adapter-nats" }
 adapter-kafka = { path = "crates/rohas-adapters/adapter-kafka" }
 adapter-rabbitmq = { path = "crates/rohas-adapters/adapter-rabbitmq" }
-adapter-sqs = { path = "crates/rohas-adapters/adapter-sqs" }
+adapter-aws = { path = "crates/rohas-adapters/adapter-aws" }
 adapter-rocksdb = { path = "crates/rohas-adapters/adapter-rocksdb" }
 rohas-telemetry = { path = "crates/rohas-telemetry" }
 

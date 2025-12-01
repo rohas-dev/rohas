@@ -17,7 +17,7 @@ pub async fn execute(schema_path: PathBuf) -> Result<()> {
 
     schema.validate()?;
 
-    info!("✓ Schema validation passed!");
+    info!("Schema validation passed!");
     info!("  - {} models", schema.models.len());
     info!("  - {} inputs", schema.inputs.len());
     info!("  - {} APIs", schema.apis.len());

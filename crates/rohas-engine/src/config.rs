@@ -106,7 +106,14 @@ pub enum AdapterType {
     Nats { url: String },
     Kafka { brokers: String },
     RabbitMQ { url: String },
-    Sqs,
+    Aws {
+        region: String,
+        #[serde(rename = "aws_type")]
+        aws_type: String, // "sqs" or "eventbridge"
+        queue_prefix: Option<String>, // For SQS
+        event_bus_name: Option<String>, // For EventBridge
+        source: Option<String>, // For EventBridge
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -225,6 +232,13 @@ struct TomlAdapter {
     #[serde(rename = "type")]
     adapter_type: String,
     buffer_size: usize,
+    // AWS-specific fields
+    region: Option<String>,
+    #[serde(rename = "aws_type")]
+    aws_type: Option<String>, // "sqs" or "eventbridge"
+    queue_prefix: Option<String>, // For SQS
+    event_bus_name: Option<String>, // For EventBridge
+    source: Option<String>, // For EventBridge
 }
 
 #[derive(Debug, Deserialize)]
@@ -255,6 +269,28 @@ impl TomlConfig {
 
         let adapter_type = match self.adapter.adapter_type.to_lowercase().as_str() {
             "memory" => AdapterType::Memory,
+            "aws" => {
+                let aws_type = self.adapter.aws_type.as_deref()
+                    .unwrap_or("sqs")
+                    .to_lowercase();
+                if aws_type != "sqs" && aws_type != "eventbridge" {
+                    anyhow::bail!("Unsupported AWS adapter type: {}. Must be 'sqs' or 'eventbridge'", aws_type);
+                }
+                AdapterType::Aws {
+                    region: self.adapter.region.unwrap_or_else(|| "us-east-1".to_string()),
+                    aws_type,
+                    queue_prefix: self.adapter.queue_prefix,
+                    event_bus_name: self.adapter.event_bus_name,
+                    source: self.adapter.source,
+                }
+            }
+            "sqs" => AdapterType::Aws {
+                region: self.adapter.region.unwrap_or_else(|| "us-east-1".to_string()),
+                aws_type: "sqs".to_string(),
+                queue_prefix: self.adapter.queue_prefix,
+                event_bus_name: None,
+                source: None,
+            },
             _ => anyhow::bail!("Unsupported adapter type: {}", self.adapter.adapter_type),
         };
 

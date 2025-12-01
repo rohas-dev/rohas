@@ -48,6 +48,7 @@ event_property = {
     ("payload:" ~ ident)
   | ("handler:" ~ handler_list)
   | ("triggers:" ~ trigger_list)
+  | ("type:" ~ ident)  // AWS adapter type: "sqs" or "eventbridge"
 }
 handler_list   = { "[" ~ ident ~ ("," ~ ident)* ~ "]" }
 

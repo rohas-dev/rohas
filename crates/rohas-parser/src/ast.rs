@@ -195,6 +195,8 @@ pub struct Event {
     pub payload: String,
     pub handlers: Vec<String>,
     pub triggers: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub adapter_type: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

@@ -230,18 +230,34 @@ impl Parser {
         let mut payload = String::new();
         let mut handlers = Vec::new();
         let mut triggers = Vec::new();
+        let mut adapter_type = None;
 
         for prop in inner {
             if prop.as_rule() == Rule::event_property {
+                let prop_text = prop.as_str();
                 let mut prop_inner = prop.into_inner();
                 if let Some(value) = prop_inner.next() {
                     match value.as_rule() {
-                        Rule::ident => payload = value.as_str().to_string(),
+                        Rule::ident => {
+                            if prop_text.starts_with("payload:") {
+                                payload = value.as_str().to_string();
+                            } else if prop_text.starts_with("type:") {
+                                let type_str = value.as_str().to_lowercase();
+                                if type_str == "sqs" || type_str == "eventbridge" {
+                                    adapter_type = Some(type_str);
+                                } else {
+                                    return Err(ParseError::InvalidEvent(format!(
+                                        "Invalid adapter type '{}' for event '{}'. Must be 'sqs' or 'eventbridge'",
+                                        value.as_str(), name
+                                    )));
+                                }
+                            }
+                        }
                         Rule::handler_list | Rule::trigger_list => {
                             let items = Self::parse_string_list(value)?;
-                            if handlers.is_empty() {
+                            if prop_text.starts_with("handler:") {
                                 handlers = items;
-                            } else {
+                            } else if prop_text.starts_with("triggers:") {
                                 triggers = items;
                             }
                         }
@@ -256,6 +272,7 @@ impl Parser {
             payload,
             handlers,
             triggers,
+            adapter_type,
         })
     }
 

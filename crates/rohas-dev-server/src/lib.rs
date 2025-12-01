@@ -136,7 +136,7 @@ impl DevServer {
         if let Err(e) = rohas_engine::tracing_log::register_tracing_log_layer(layer) {
             warn!("Failed to register tracing log layer: {}", e);
         } else {
-            info!("✓ Tracing log layer registered");
+            info!("Tracing log layer registered");
         }
 
         engine.initialize().await?;
@@ -144,7 +144,7 @@ impl DevServer {
         let mut engine_lock = self.engine.write().await;
         *engine_lock = Some(engine);
 
-        info!("✓ Engine loaded and initialized");
+        info!("Engine loaded and initialized");
 
         Ok(())
     }
@@ -286,7 +286,7 @@ impl DevServer {
 
                         match reload_result {
                             Ok(_) => {
-                                info!("✓ Engine reloaded successfully");
+                                info!("Engine reloaded successfully");
 
                                 info!("Starting new HTTP server with updated schema...");
                                 let engine = self.engine.clone();
@@ -306,7 +306,7 @@ impl DevServer {
                                 
                                 if !new_handle.is_finished() {
                                     server_handle = Some(new_handle);
-                                    info!("✓ HTTP server restarted with new schema on port {}", port);
+                                    info!("HTTP server restarted with new schema on port {}", port);
                                 } else {
                                     match new_handle.await {
                                         Ok(_) => {
@@ -336,7 +336,7 @@ impl DevServer {
                                 if let Err(e) = eng.clear_handler_cache().await {
                                     error!("Failed to clear handler cache: {}", e);
                                 } else {
-                                    info!("✓ Handler cache cleared");
+                                    info!("Handler cache cleared");
                                 }
                             }
                         } else {
@@ -344,7 +344,7 @@ impl DevServer {
 
                             match self.reload_typescript_handler().await {
                                 Ok(_) => {
-                                    info!("✓ Handler reloaded successfully");
+                                    info!("Handler reloaded successfully");
                                 }
                                 Err(e) => {
                                     error!("Failed to reload handler: {}", e);
@@ -394,7 +394,7 @@ impl DevServer {
 
         rohas_codegen::generate(schema, &output_dir, lang)?;
 
-        info!("✓ Codegen completed");
+        info!("Codegen completed");
 
         Ok(())
     }

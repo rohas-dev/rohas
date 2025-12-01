@@ -32,4 +32,4 @@ async def handle_test(req: TestRequest, state: State) -> TestResponse:
     state.logger.debug('Hello, world!')
     state.logger.trace('Hello, world!')
 
-    return TestResponse(data="Hello, world!")
+    return TestResponse(data="Hello, world!s")

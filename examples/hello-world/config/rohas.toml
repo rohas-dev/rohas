@@ -9,8 +9,15 @@ port = 4400
 enable_cors = true
 
 [adapter]
-type = "memory"
+type = "aws"
 buffer_size = 1000
+region = "ap-southeast-1"
+aws_type = "sqs"  # or "eventbridge"
+queue_prefix = "rohas-hello-world"
+# For EventBridge:
+# event_bus_name = "my-event-bus"  # Optional, defaults to "default"
+# source = "rohas"  # Optional, defaults to "rohas"
+
 
 [telemetry]
 # Telemetry adapter type: rocksdb (default), prometheus, influxdb, timescaledb
