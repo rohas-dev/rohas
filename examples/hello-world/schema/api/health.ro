@@ -1,0 +1,10 @@
+model HealthResponse {
+  status  String
+  timestamp String
+}
+
+api Health {
+  method: GET
+  path: "/health"
+  response: HealthResponse
+}
