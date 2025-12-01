@@ -16,6 +16,7 @@ api Test {
   path: "/test"
   response: String
   triggers: [UserCreated]
+  middlewares: [auth, rate_limit, logging]
 }
 
 

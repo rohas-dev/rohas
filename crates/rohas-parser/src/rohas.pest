@@ -34,12 +34,13 @@ api_property = {
   | ("body:" ~ ident)
   | ("response:" ~ ident)
   | ("triggers:" ~ trigger_list)
-  | ("middlewares:" ~ string_list)
+  | ("middlewares:" ~ middleware_list)
 }
 
-http_method  = { "GET" | "POST" | "PUT" | "PATCH" | "DELETE" }
-trigger_list = { "[" ~ ident ~ ("," ~ ident)* ~ "]" }
-string_list  = { "[" ~ string ~ ("," ~ string)* ~ "]" }
+http_method    = { "GET" | "POST" | "PUT" | "PATCH" | "DELETE" }
+trigger_list   = { "[" ~ ident ~ ("," ~ ident)* ~ "]" }
+string_list    = { "[" ~ string ~ ("," ~ string)* ~ "]" }
+middleware_list = { "[" ~ (ident | string) ~ ("," ~ (ident | string))* ~ "]" }
 
 // Event definition
 event          = { "event" ~ ident ~ "{" ~ event_property* ~ "}" }
@@ -71,4 +72,5 @@ ws_property = {
   | ("onDisconnect:" ~ handler_list)
   | ("triggers:" ~ trigger_list)
   | ("broadcast:" ~ boolean)
+  | ("middlewares:" ~ middleware_list)
 }

@@ -12,7 +12,7 @@ use chrono::Utc;
 use rohas_codegen::templates;
 use rohas_parser::{HttpMethod, Schema};
 use rohas_runtime::Executor;
-use serde_json::Value;
+use serde_json::{json, Value};
 use std::{collections::HashMap, sync::Arc};
 use tracing::{debug, info_span};
 
@@ -307,11 +307,31 @@ async fn api_handler(
         }
     }
 
+    let middleware_result = execute_middlewares(
+        state.clone(),
+        &api.middlewares,
+        payload.clone(),
+        query_params.clone(),
+        &trace_id,
+        &api_name,
+    )
+    .await;
+ 
+    if let Err(e) = middleware_result {
+        state
+            .trace_store
+            .complete_trace(&trace_id, crate::trace::TraceStatus::Failed, Some(e.clone()))
+            .await;
+        return Err(ApiError::BadRequest(e));
+    }
+ 
+    let (final_payload, final_query_params) = middleware_result.unwrap();
+
     let result = execute_handler(
         state.clone(),
         handler_name.clone(),
-        payload,
-        query_params,
+        final_payload,
+        final_query_params,
         api_triggers,
         api_name,
         trace_id.clone(),
@@ -381,6 +401,98 @@ fn parse_query_string(query: &str) -> HashMap<String, String> {
             Some((key, value))
         })
         .collect()
+}
+
+async fn execute_middlewares(
+    state: ApiState,
+    middlewares: &[String],
+    mut payload: Value,
+    mut query_params: HashMap<String, String>,
+    trace_id: &str,
+    api_name: &str,
+) -> Result<(Value, HashMap<String, String>), String> {
+    if middlewares.is_empty() {
+        return Ok((payload, query_params));
+    }
+
+    debug!("Executing {} middlewares for API: {}", middlewares.len(), api_name);
+
+    for middleware_name in middlewares {
+        let middleware_handler_name = match state.config.language {
+            config::Language::TypeScript => middleware_name.clone(),
+            config::Language::Python => templates::to_snake_case(middleware_name.as_str()),
+        };
+
+        debug!("Executing middleware: {}", middleware_handler_name);
+ 
+        let middleware_context = json!({
+            "payload": payload,
+            "query_params": query_params,
+            "api_name": api_name,
+            "trace_id": trace_id,
+        });
+
+        let mut context = rohas_runtime::HandlerContext::new(&middleware_handler_name, middleware_context);
+        context.metadata.insert("middleware".to_string(), "true".to_string());
+        context.metadata.insert("api_name".to_string(), api_name.to_string());
+
+        let start = std::time::Instant::now();
+        let result = state.executor.execute_with_context(context).await;
+        let duration_ms = start.elapsed().as_millis() as u64;
+
+        if let Ok(ref exec_result) = result {
+            state
+                .trace_store
+                .add_step(
+                    trace_id,
+                    format!("middleware:{}", middleware_handler_name),
+                    duration_ms.max(exec_result.execution_time_ms),
+                    exec_result.success,
+                    exec_result.error.clone(),
+                )
+                .await;
+        }
+
+        match result {
+            Ok(exec_result) => {
+                if !exec_result.success {
+                    let error_msg = exec_result.error.unwrap_or_else(|| {
+                        format!("Middleware '{}' rejected the request", middleware_name)
+                    });
+                    return Err(error_msg);
+                }
+
+                if let Some(data) = exec_result.data {
+                    if let Value::Object(middleware_data) = data {
+                        if let Some(new_payload) = middleware_data.get("payload") {
+                            payload = new_payload.clone();
+                        }
+
+                        if let Some(new_query_params) = middleware_data.get("query_params") {
+                            if let Value::Object(params_obj) = new_query_params {
+                                query_params = params_obj
+                                    .iter()
+                                    .filter_map(|(k, v)| {
+                                        if let Value::String(s) = v {
+                                            Some((k.clone(), s.clone()))
+                                        } else {
+                                            None
+                                        }
+                                    })
+                                    .collect();
+                            }
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                let error_msg = format!("Middleware '{}' execution failed: {}", middleware_name, e);
+                return Err(error_msg);
+            }
+        }
+    }
+
+    Ok((payload, query_params))
 }
 
 async fn execute_handler(

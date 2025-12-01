@@ -6,4 +6,5 @@ ws HelloWorld {
   onDisconnect: [on_disconnect_handler]
   triggers: [UserCreated]
   broadcast: true
+  middlewares: [auth, rate_limit, logging]
 }
