@@ -198,6 +198,7 @@ coverage/
 
 # Rohas compiled output
 .rohas/
+src/generated/
 "#;
 
     fs::write(project_root.join(".gitignore"), content)?;
