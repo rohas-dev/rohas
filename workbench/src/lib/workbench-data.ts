@@ -361,3 +361,22 @@ export async function fetchTypeSchema(typeName: string | null): Promise<unknown 
     return null;
   }
 }
+
+export type SystemMetrics = {
+  cpu: number;
+  ram: {
+    used_mb: number;
+    total_mb: number;
+    percentage: number;
+  };
+};
+
+export async function fetchSystemMetrics(): Promise<SystemMetrics | null> {
+  try {
+    const metrics = await apiRequest<SystemMetrics>("/api/workbench/system-metrics");
+    return metrics;
+  } catch (error) {
+    console.error("Failed to fetch system metrics:", error);
+    return null;
+  }
+}

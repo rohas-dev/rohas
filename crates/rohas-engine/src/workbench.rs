@@ -11,6 +11,9 @@ use serde_json::json;
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path as StdPath;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
+use sysinfo::System;
 use tracing::error;
 
 #[derive(Serialize, Deserialize)]
@@ -184,6 +187,7 @@ pub fn workbench_routes() -> Router<ApiState> {
         .route("/api/workbench/endpoints", get(get_endpoints))
         .route("/api/workbench/types/{type_name}", get(get_type_schema))
         .route("/api/workbench/events/{name}/trigger", post(trigger_event))
+        .route("/api/workbench/system-metrics", get(get_system_metrics))
 }
 
 async fn get_snapshot(State(state): State<ApiState>) -> Result<Response, WorkbenchError> {
@@ -1109,6 +1113,69 @@ async fn trigger_event(
         "payload": payload,
     }))
     .into_response())
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct SystemMetrics {
+    pub cpu: f32,
+    pub ram: RamMetrics,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct RamMetrics {
+    pub used_mb: u64,
+    pub total_mb: u64,
+    pub percentage: f32,
+}
+
+static SYSTEM: std::sync::OnceLock<Arc<Mutex<System>>> = std::sync::OnceLock::new();
+static LAST_UPDATE: std::sync::OnceLock<Arc<Mutex<Instant>>> = std::sync::OnceLock::new();
+
+fn get_system() -> Arc<Mutex<System>> {
+    SYSTEM.get_or_init(|| Arc::new(Mutex::new(System::new_all()))).clone()
+}
+
+fn get_last_update() -> Arc<Mutex<Instant>> {
+    LAST_UPDATE.get_or_init(|| Arc::new(Mutex::new(Instant::now()))).clone()
+}
+
+async fn get_system_metrics() -> Result<Response, WorkbenchError> {
+    let system = get_system();
+    let mut system_guard = system.lock().map_err(|e| {
+        WorkbenchError::Internal(format!("Failed to acquire system lock: {}", e))
+    })?;
+    
+    let last_update = get_last_update();
+    let mut last_update_guard = last_update.lock().map_err(|e| {
+        WorkbenchError::Internal(format!("Failed to acquire update lock: {}", e))
+    })?;
+
+    if last_update_guard.elapsed() > Duration::from_secs(1) {
+        system_guard.refresh_all();
+        *last_update_guard = Instant::now();
+    }   
+    let cpu_usage = system_guard.global_cpu_usage();
+
+    let total_memory = system_guard.total_memory();
+    let used_memory = system_guard.used_memory();
+    let total_memory_mb = total_memory / (1024 * 1024);
+    let used_memory_mb = used_memory / (1024 * 1024);
+    let memory_percentage = if total_memory > 0 {
+        (used_memory as f32 / total_memory as f32) * 100.0
+    } else {
+        0.0
+    };
+    
+    let metrics = SystemMetrics {
+        cpu: cpu_usage,
+        ram: RamMetrics {
+            used_mb: used_memory_mb,
+            total_mb: total_memory_mb,
+            percentage: memory_percentage,
+        },
+    };
+    
+    Ok(Json(metrics).into_response())
 }
 
 #[derive(Debug)]

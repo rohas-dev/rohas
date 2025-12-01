@@ -19,6 +19,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { fetchSystemMetrics } from "@/lib/workbench-data";
 
 interface DataPoint {
   time: string;
@@ -35,57 +36,46 @@ export function SystemMetrics() {
   const timeRef = useRef(0);
 
   useEffect(() => {
-    const updateMetrics = () => {
-      // Get memory info if available (Chrome/Edge only)
-      const memory = (performance as any).memory;
-      let ramUsed = 0;
-      let ramTotal = 0;
+    const updateMetrics = async () => {
+      try {
+        const metrics = await fetchSystemMetrics();
+        
+        if (metrics) {
+          const ramPercentage = Math.round(metrics.ram.percentage);
+          
+          setCurrentRam({
+            used: metrics.ram.used_mb,
+            total: metrics.ram.total_mb,
+            percentage: ramPercentage,
+          });
+          setCurrentCpu(Math.round(metrics.cpu));
 
-      if (memory) {
-        // Convert bytes to MB
-        ramUsed = Math.round(memory.usedJSHeapSize / 1024 / 1024);
-        ramTotal = Math.round(memory.jsHeapSizeLimit / 1024 / 1024);
-      } else {
-        // Fallback: simulate realistic values with some variation
-        const baseRam = 3000;
-        ramUsed = baseRam + Math.floor(Math.random() * 2000) - 1000; // 2-4 GB with variation
-        ramTotal = 16384; // 16 GB
-      }
+          // Add new data point
+          timeRef.current += 2;
+          const minutes = Math.floor(timeRef.current / 60);
+          const seconds = timeRef.current % 60;
+          const timeLabel = `${minutes}:${seconds.toString().padStart(2, "0")}`;
 
-      // Simulate CPU usage (in a real app, this would come from a server API)
-      const cpuUsage = Math.floor(Math.random() * 40) + 20; // 20-60%
+          setData((prev) => {
+            const newData = [
+              ...prev,
+              {
+                time: timeLabel,
+                ram: ramPercentage,
+                cpu: Math.round(metrics.cpu),
+              },
+            ];
 
-      const ramPercentage = Math.round((ramUsed / ramTotal) * 100);
-
-      setCurrentRam({
-        used: ramUsed,
-        total: ramTotal,
-        percentage: ramPercentage,
-      });
-      setCurrentCpu(cpuUsage);
-
-      // Add new data point
-      timeRef.current += 2;
-      const minutes = Math.floor(timeRef.current / 60);
-      const seconds = timeRef.current % 60;
-      const timeLabel = `${minutes}:${seconds.toString().padStart(2, "0")}`;
-
-      setData((prev) => {
-        const newData = [
-          ...prev,
-          {
-            time: timeLabel,
-            ram: ramPercentage,
-            cpu: cpuUsage,
-          },
-        ];
-
-        // Keep only the last MAX_DATA_POINTS
-        if (newData.length > MAX_DATA_POINTS) {
-          return newData.slice(-MAX_DATA_POINTS);
+            // Keep only the last MAX_DATA_POINTS
+            if (newData.length > MAX_DATA_POINTS) {
+              return newData.slice(-MAX_DATA_POINTS);
+            }
+            return newData;
+          });
         }
-        return newData;
-      });
+      } catch (error) {
+        console.error("Failed to update system metrics:", error);
+      }
     };
 
     // Initialize with first data point
