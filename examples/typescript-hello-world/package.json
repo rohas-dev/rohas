@@ -1,0 +1,28 @@
+{
+  "name": "rohas-app",
+  "version": "0.1.0",
+  "description": "Rohas event-driven application",
+  "main": ".rohas/index.js",
+  "type": "module",
+  "scripts": {
+    "dev": "rohas dev",
+    "build": "npm run compile",
+    "compile": "rspack build",
+    "compile:watch": "rspack build --watch",
+    "start": "node .rohas/index.js",
+    "codegen": "rohas codegen",
+    "validate": "rohas validate"
+  },
+  "dependencies": {
+    "typescript": "^5.3.3",
+    "zod": "^3.22.4"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "@rspack/cli": "^1.1.7",
+    "@rspack/core": "^1.1.7"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

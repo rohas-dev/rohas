@@ -6,7 +6,7 @@ use crate::event::EventBus;
 use crate::router;
 use rohas_cron::{JobConfig, Scheduler};
 use rohas_parser::{Parser, Schema};
-use rohas_runtime::{Executor, RuntimeConfig};
+use rohas_runtime::{Executor, NodeExecutionMode, RuntimeConfig};
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::path::PathBuf;
@@ -46,6 +46,7 @@ impl Engine {
             language: config.language.clone().into(),
             project_root: config.project_root.clone(),
             timeout_seconds: 30,
+            node_execution_mode: rohas_runtime::NodeExecutionMode::Rpc, // Use RPC mode (AWS Lambda-like)
         };
 
         let executor = Arc::new(Executor::new(runtime_config));

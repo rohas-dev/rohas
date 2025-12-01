@@ -43,6 +43,15 @@ pub struct TriggeredEvent {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HandlerLog {
+    pub level: String,
+    pub handler: String,
+    pub message: String,
+    pub fields: std::collections::HashMap<String, serde_json::Value>,
+    pub timestamp: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HandlerResult {
     pub success: bool,
 
@@ -57,6 +66,9 @@ pub struct HandlerResult {
 
     #[serde(default)]
     pub auto_trigger_payloads: std::collections::HashMap<String, serde_json::Value>,
+
+    #[serde(default, rename = "_rohas_logs")]
+    pub logs: Vec<HandlerLog>,
 }
 
 impl HandlerResult {
@@ -68,6 +80,7 @@ impl HandlerResult {
             execution_time_ms,
             triggers: Vec::new(),
             auto_trigger_payloads: std::collections::HashMap::new(),
+            logs: Vec::new(),
         }
     }
 
@@ -79,6 +92,7 @@ impl HandlerResult {
             execution_time_ms,
             triggers: Vec::new(),
             auto_trigger_payloads: std::collections::HashMap::new(),
+            logs: Vec::new(),
         }
     }
 

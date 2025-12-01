@@ -57,6 +57,7 @@ cron          = { "cron" ~ ident ~ "{" ~ cron_property* ~ "}" }
 cron_property = {
     ("schedule:" ~ string)
   | ("triggers:" ~ trigger_list)
+  | ("handler:" ~ ident)
 }
 
 // Input definition (DTO)

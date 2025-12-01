@@ -1,0 +1,5 @@
+cron DailyCleanup {
+  schedule: "0/2 * * * * *"
+  triggers: [CleanupStep1, CleanupStep2]
+  handler: handle_daily_cleanup
+}

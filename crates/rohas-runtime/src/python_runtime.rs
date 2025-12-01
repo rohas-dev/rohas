@@ -172,6 +172,13 @@ impl PythonRuntime {
             .map(|n| n == "middlewares")
             .unwrap_or(false);
 
+        let is_cron_handler = handler_path
+            .parent()
+            .and_then(|p| p.file_name())
+            .and_then(|n| n.to_str())
+            .map(|n| n == "cron")
+            .unwrap_or(false);
+
         let function_name = if is_event_handler || is_websocket_handler {
             let direct_name = handler_name.to_string();
             let handle_name = format!("handle_{}", handler_name);
@@ -237,6 +244,26 @@ impl PythonRuntime {
         } else if is_websocket_handler {
             Self::call_websocket_handler(py, handler_fn, context, param_count, state_obj)
                 .map_err(|e| RuntimeError::ExecutionFailed(format!("Handler call failed: {}", e)))?
+        } else if is_cron_handler {
+            if param_count == 0 {
+                handler_fn
+                    .call0()
+                    .map_err(|e| RuntimeError::ExecutionFailed(format!("Handler call failed: {}", e)))?
+            } else if param_count == 1 {
+                let request_dict = Self::build_request_dict(py, context)?;
+                handler_fn
+                    .call1((request_dict,))
+                .map_err(|e| RuntimeError::ExecutionFailed(format!("Handler call failed: {}", e)))?
+            } else if param_count >= 2 {
+                let request_dict = Self::build_request_dict(py, context)?;
+                handler_fn
+                    .call1((request_dict, state_obj))
+                    .map_err(|e| RuntimeError::ExecutionFailed(format!("Handler call failed: {}", e)))?
+            } else {
+                handler_fn
+                    .call0()
+                    .map_err(|e| RuntimeError::ExecutionFailed(format!("Handler call failed: {}", e)))?
+            }
         } else if param_count >= 2 {
             let request_dict = Self::build_request_dict(py, context)?;
             let request_obj = Self::instantiate_request_class(py, handler_name, &request_dict)
