@@ -220,6 +220,7 @@ pub struct WebSocket {
     pub on_disconnect: Vec<String>,
     pub triggers: Vec<String>,
     pub broadcast: bool,
+    pub middlewares: Vec<String>,
 }
 
 #[cfg(test)]

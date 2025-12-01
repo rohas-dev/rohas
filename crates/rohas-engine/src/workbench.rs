@@ -859,6 +859,7 @@ pub struct WebSocketEndpoint {
     pub on_disconnect: Vec<String>,
     pub triggers: Vec<String>,
     pub broadcast: bool,
+    pub middlewares: Vec<String>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -913,6 +914,7 @@ async fn get_endpoints(State(state): State<ApiState>) -> Result<Response, Workbe
             on_disconnect: ws.on_disconnect.clone(),
             triggers: ws.triggers.clone(),
             broadcast: ws.broadcast,
+            middlewares: ws.middlewares.clone(),
         })
         .collect();
 

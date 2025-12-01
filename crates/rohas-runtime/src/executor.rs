@@ -110,10 +110,21 @@ impl Executor {
 
     fn resolve_handler_path(&self, handler_name: &str) -> Result<PathBuf> {
         let handlers_dir = self.config.project_root.join("src/handlers");
+        let middlewares_dir = self.config.project_root.join("src/middlewares");
 
         let snake_case_name = templates::to_snake_case(handler_name);
 
         let possible_paths = [
+            middlewares_dir.join(format!(
+                "{}.{}",
+                snake_case_name,
+                self.config.language.file_extension()
+            )),
+            middlewares_dir.join(format!(
+                "{}.{}",
+                handler_name,
+                self.config.language.file_extension()
+            )),
             handlers_dir.join(format!(
                 "api/{}.{}",
                 handler_name,

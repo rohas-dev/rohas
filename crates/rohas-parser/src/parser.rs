@@ -199,7 +199,7 @@ impl Parser {
                         Rule::trigger_list => {
                             triggers = Self::parse_string_list(key)?;
                         }
-                        Rule::string_list => {
+                        Rule::string_list | Rule::middleware_list => {
                             middlewares = Self::parse_string_list(key)?;
                         }
                         _ => {}
@@ -357,6 +357,7 @@ impl Parser {
         let mut on_disconnect = Vec::new();
         let mut triggers = Vec::new();
         let mut broadcast = false;
+        let mut middlewares = Vec::new();
 
         for prop in inner {
             if prop.as_rule() == Rule::ws_property {
@@ -387,6 +388,11 @@ impl Parser {
                         Rule::trigger_list => {
                             triggers = Self::parse_string_list(key)?;
                         }
+                        Rule::string_list | Rule::middleware_list => {
+                            if prop_text.starts_with("middlewares:") {
+                                middlewares = Self::parse_string_list(key)?;
+                            }
+                        }
                         Rule::boolean => {
                             if prop_text.starts_with("broadcast:") {
                                 broadcast = key.as_str() == "true";
@@ -407,6 +413,7 @@ impl Parser {
             on_disconnect,
             triggers,
             broadcast,
+            middlewares,
         })
     }
 }

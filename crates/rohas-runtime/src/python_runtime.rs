@@ -117,16 +117,20 @@ impl PythonRuntime {
         let sys = py.import("sys")?;
         let sys_path = sys.getattr("path")?;
 
+        if let Some(parent) = handler_path.parent() {
+            sys_path.call_method1("insert", (0, parent.to_str().unwrap()))?;
+        }
+
         if let Some(root) = project_root {
             let src_path = root.join("src");
             if src_path.exists() {
-                sys_path.call_method1("insert", (0, src_path.to_str().unwrap()))?;
-                debug!("Added to sys.path: {:?}", src_path);
+                let src_path_str = src_path.to_str().unwrap();
+                let path_list: Vec<String> = sys_path.extract()?;
+                if !path_list.contains(&src_path_str.to_string()) {
+                    sys_path.call_method1("append", (src_path_str,))?;
+                    debug!("Added to sys.path (appended): {:?}", src_path);
+                }
             }
-        }
-
-        if let Some(parent) = handler_path.parent() {
-            sys_path.call_method1("insert", (0, parent.to_str().unwrap()))?;
         }
 
         let module_name = handler_path
@@ -161,8 +165,17 @@ impl PythonRuntime {
             .map(|n| n == "websockets")
             .unwrap_or(false);
 
+        let is_middleware = handler_path
+            .parent()
+            .and_then(|p| p.file_name())
+            .and_then(|n| n.to_str())
+            .map(|n| n == "middlewares")
+            .unwrap_or(false);
+
         let function_name = if is_event_handler || is_websocket_handler {
             handler_name.to_string()
+        } else if is_middleware {
+            format!("{}_middleware", templates::to_snake_case(handler_name))
         } else {
             Self::extract_function_name(handler_name)
         };

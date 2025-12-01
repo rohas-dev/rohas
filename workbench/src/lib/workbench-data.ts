@@ -310,6 +310,7 @@ export type WebSocketEndpoint = {
   on_disconnect: string[];
   triggers: string[];
   broadcast: boolean;
+  middlewares: string[];
 };
 
 export type CronJob = {

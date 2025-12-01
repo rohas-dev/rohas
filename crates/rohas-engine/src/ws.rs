@@ -10,6 +10,67 @@ use uuid::Uuid;
 
 use crate::{api::ApiState, config, trace::TraceEntryType};
 
+async fn execute_websocket_middlewares(
+    state: ApiState,
+    middlewares: &[String],
+    payload: serde_json::Value,
+    trace_id: &str,
+    ws_name: &str,
+) -> Result<(), String> {
+    if middlewares.is_empty() {
+        return Ok(());
+    }
+
+    debug!("Executing {} middlewares for WebSocket: {}", middlewares.len(), ws_name);
+
+    for middleware_name in middlewares {
+        let middleware_handler_name = match state.config.language {
+            config::Language::TypeScript => middleware_name.clone(),
+            config::Language::Python => templates::to_snake_case(middleware_name.as_str()),
+        };
+
+        debug!("Executing WebSocket middleware: {}", middleware_handler_name);
+
+        let mut context = rohas_runtime::HandlerContext::new(&middleware_handler_name, payload.clone());
+        context.metadata.insert("middleware".to_string(), "true".to_string());
+        context.metadata.insert("websocket_name".to_string(), ws_name.to_string());
+
+        let start = std::time::Instant::now();
+        let result = state.executor.execute_with_context(context).await;
+        let duration_ms = start.elapsed().as_millis() as u64;
+
+        if let Ok(ref exec_result) = result {
+            state
+                .trace_store
+                .add_step(
+                    trace_id,
+                    format!("middleware:{}", middleware_handler_name),
+                    duration_ms.max(exec_result.execution_time_ms),
+                    exec_result.success,
+                    exec_result.error.clone(),
+                )
+                .await;
+        }
+
+        match result {
+            Ok(exec_result) => {
+                if !exec_result.success {
+                    let error_msg = exec_result.error.unwrap_or_else(|| {
+                        format!("Middleware '{}' rejected the WebSocket connection", middleware_name)
+                    });
+                    return Err(error_msg);
+                }
+            }
+            Err(e) => {
+                let error_msg = format!("Middleware '{}' execution failed: {}", middleware_name, e);
+                return Err(error_msg);
+            }
+        }
+    }
+
+    Ok(())
+}
+
 pub async fn websocket_handler(socket: WebSocket, state: ApiState, ws_name: String) {
     let connection_id = Uuid::new_v4().to_string();
     let ws_config = state
@@ -40,6 +101,31 @@ pub async fn websocket_handler(socket: WebSocket, state: ApiState, ws_name: Stri
             metadata,
         )
         .await;
+
+    if !ws_config.middlewares.is_empty() {
+        let middleware_payload = json!({
+            "connection": connection.clone(),
+            "websocket_name": ws_name,
+        });
+        
+        let middleware_result = execute_websocket_middlewares(
+            state.clone(),
+            &ws_config.middlewares,
+            middleware_payload,
+            &connection_trace_id,
+            &ws_name,
+        )
+        .await;
+
+        if let Err(e) = middleware_result {
+            error!("WebSocket middleware rejected connection: {}", e);
+            state
+                .trace_store
+                .complete_trace(&connection_trace_id, crate::trace::TraceStatus::Failed, Some(e))
+                .await;
+            return;
+        }
+    }
 
     if !ws_config.on_connect.is_empty() {
         for handler_name in &ws_config.on_connect {

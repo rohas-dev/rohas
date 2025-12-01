@@ -504,6 +504,99 @@ pub fn generate_websockets(schema: &Schema, output_dir: &Path) -> Result<()> {
     Ok(())
 }
 
+pub fn generate_middlewares(schema: &Schema, output_dir: &Path) -> Result<()> {
+    use std::collections::HashSet;
+    
+    let mut middleware_names = HashSet::new();
+    
+    for api in &schema.apis {
+        for middleware in &api.middlewares {
+            middleware_names.insert(middleware.clone());
+        }
+    }
+    
+    for ws in &schema.websockets {
+        for middleware in &ws.middlewares {
+            middleware_names.insert(middleware.clone());
+        }
+    }
+    
+    if middleware_names.is_empty() {
+        return Ok(());
+    }
+    
+    let middlewares_dir = output_dir.join("middlewares");
+    for middleware_name in middleware_names {
+        let file_name = format!("{}.ts", middleware_name);
+        let middleware_path = middlewares_dir.join(&file_name);
+        
+        if !middleware_path.exists() {
+            let content = generate_middleware_stub(&middleware_name);
+            fs::write(middleware_path, content)?;
+        }
+    }
+    
+    Ok(())
+}
+
+fn generate_middleware_stub(middleware_name: &str) -> String {
+    let mut content = String::new();
+    
+    content.push_str("import { State } from '@generated/state';\n\n");
+    
+    content.push_str("export interface MiddlewareContext {\n");
+    content.push_str("  payload?: any;\n");
+    content.push_str("  query_params?: Record<string, string>;\n");
+    content.push_str("  connection?: any;\n");
+    content.push_str("  websocket_name?: string;\n");
+    content.push_str("  api_name?: string;\n");
+    content.push_str("  trace_id?: string;\n");
+    content.push_str("}\n\n");
+    
+    content.push_str(&format!(
+        "export async function {}Middleware(\n",
+        middleware_name
+    ));
+    content.push_str("  context: MiddlewareContext,\n");
+    content.push_str("  state: State\n");
+    content.push_str("): Promise<MiddlewareContext | null> {\n");
+    content.push_str("  /**\n");
+    content.push_str(&format!("   * Middleware function for {}.\n", middleware_name));
+    content.push_str("   * \n");
+    content.push_str("   * @param context - Request context containing:\n");
+    content.push_str("   *   - payload: Request payload (for APIs)\n");
+    content.push_str("   *   - query_params: Query parameters (for APIs)\n");
+    content.push_str("   *   - connection: WebSocket connection info (for WebSockets)\n");
+    content.push_str("   *   - websocket_name: WebSocket name (for WebSockets)\n");
+    content.push_str("   *   - api_name: API name (for APIs)\n");
+    content.push_str("   *   - trace_id: Trace ID\n");
+    content.push_str("   * @param state - State object for logging and triggering events\n");
+    content.push_str("   * @returns Modified context with 'payload' and/or 'query_params' keys,\n");
+    content.push_str("   *   or null to pass through unchanged. Throw an error to reject the request.\n");
+    content.push_str("   * \n");
+    content.push_str("   * To reject the request, throw an error:\n");
+    content.push_str("   *   throw new Error('Access denied');\n");
+    content.push_str("   * \n");
+    content.push_str("   * To modify the request:\n");
+    content.push_str("   *   return {\n");
+    content.push_str("   *     ...context,\n");
+    content.push_str("   *     payload: modifiedPayload,\n");
+    content.push_str("   *     query_params: modifiedQueryParams\n");
+    content.push_str("   *   };\n");
+    content.push_str("   */\n");
+    content.push_str("  // TODO: Implement middleware logic\n");
+    content.push_str("  // Example: Validate authentication\n");
+    content.push_str("  // Example: Rate limiting\n");
+    content.push_str("  // Example: Logging\n");
+    content.push_str("  // Example: Modify payload/query_params\n");
+    content.push_str("  \n");
+    content.push_str("  // Pass through unchanged\n");
+    content.push_str("  return null;\n");
+    content.push_str("}\n");
+    
+    content
+}
+
 fn generate_websocket_content(ws: &WebSocket) -> String {
     let mut content = String::new();
 
