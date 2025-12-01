@@ -80,6 +80,9 @@ notify-debouncer-full = "0.6.0"
 uuid = { version = "1.6", features = ["v4", "serde"] }
 base64 = "0.22"
 
+# System information
+sysinfo = "0.37.2"
+
 # Testing
 mockall = "0.14.0"
 proptest = "1.4"
