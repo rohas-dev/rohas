@@ -1,5 +1,5 @@
 use crate::error::Result;
-use crate::{config, python, typescript, Language};
+use crate::{config, python, rust, typescript, Language};
 use rohas_parser::Schema;
 use std::fs;
 use std::path::Path;
@@ -28,6 +28,7 @@ impl Generator {
         match self.language {
             Language::TypeScript => self.generate_typescript(schema, output_dir)?,
             Language::Python => self.generate_python(schema, output_dir)?,
+            Language::Rust => self.generate_rust(schema, output_dir)?,
         }
 
         info!("Code generation completed successfully");
@@ -106,6 +107,27 @@ impl Generator {
         info!("Generating Python configuration files");
         config::generate_requirements_txt(schema, output_dir)?;
         config::generate_pyproject_toml(schema, output_dir)?;
+
+        Ok(())
+    }
+
+    fn generate_rust(&self, schema: &Schema, output_dir: &Path) -> Result<()> {
+        rust::generate_state(output_dir)?;
+        rust::generate_models(schema, output_dir)?;
+        rust::generate_dtos(schema, output_dir)?;
+        rust::generate_apis(schema, output_dir)?;
+        rust::generate_events(schema, output_dir)?;
+        rust::generate_crons(schema, output_dir)?;
+        rust::generate_websockets(schema, output_dir)?;
+        rust::generate_middlewares(schema, output_dir)?;
+        rust::generate_lib_rs(schema, output_dir)?;
+
+        info!("Generating Rust configuration files");
+        config::generate_cargo_toml(schema, output_dir)?;
+        
+        if rust::is_in_rohas_workspace(output_dir) {
+            rust::generate_dev_scripts(output_dir)?;
+        }
 
         Ok(())
     }

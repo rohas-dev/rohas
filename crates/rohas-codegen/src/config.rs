@@ -145,6 +145,43 @@ target-version = "py39"
     Ok(())
 }
 
+pub fn generate_cargo_toml(_schema: &Schema, output_dir: &Path) -> Result<()> {
+    let project_root = get_project_root(output_dir);
+    let project_name = extract_project_name(&project_root);
+
+    let lib_name = project_name.replace('-', "_");
+
+    let content = format!(
+        r#"[package]
+name = "{}"
+version = "0.1.0"
+edition = "2021"
+
+[workspace]
+
+[lib]
+name = "{}"
+path = "src/lib.rs"
+
+[dependencies]
+rohas-runtime = {{ path = "../../crates/rohas-runtime" }}
+serde = {{ version = "1.0", features = ["derive"] }}
+serde_json = "1.0"
+tokio = {{ version = "1.0", features = ["full"] }}
+chrono = {{ version = "0.4", features = ["serde"] }}
+tracing = "0.1"
+
+[dev-dependencies]
+tokio-test = "0.4"
+"#,
+        project_name,
+        lib_name
+    );
+
+    fs::write(project_root.join("Cargo.toml"), content)?;
+    Ok(())
+}
+
 pub fn generate_gitignore(_schema: &Schema, output_dir: &Path) -> Result<()> {
     let project_root = get_project_root(output_dir);
     let content = r#"# Dependencies

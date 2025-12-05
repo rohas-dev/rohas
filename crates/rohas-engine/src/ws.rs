@@ -27,6 +27,7 @@ async fn execute_websocket_middlewares(
         let middleware_handler_name = match state.config.language {
             config::Language::TypeScript => middleware_name.clone(),
             config::Language::Python => templates::to_snake_case(middleware_name.as_str()),
+            config::Language::Rust => templates::to_snake_case(middleware_name.as_str()),
         };
 
         debug!("Executing WebSocket middleware: {}", middleware_handler_name);
@@ -132,6 +133,7 @@ pub async fn websocket_handler(socket: WebSocket, state: ApiState, ws_name: Stri
             let handler_name = match state.config.language {
                 config::Language::TypeScript => handler_name.clone(),
                 config::Language::Python => templates::to_snake_case(handler_name.as_str()),
+                config::Language::Rust => templates::to_snake_case(handler_name.as_str()),
             };
 
             let payload = connection.clone();
@@ -215,6 +217,9 @@ pub async fn websocket_handler(socket: WebSocket, state: ApiState, ws_name: Stri
                         let handler_name = match state.config.language {
                             config::Language::TypeScript => handler_name.clone(),
                             config::Language::Python => {
+                                templates::to_snake_case(handler_name.as_str())
+                            }
+                            config::Language::Rust => {
                                 templates::to_snake_case(handler_name.as_str())
                             }
                         };
@@ -379,6 +384,7 @@ pub async fn websocket_handler(socket: WebSocket, state: ApiState, ws_name: Stri
             let handler_name = match state.config.language {
                 config::Language::TypeScript => handler_name.clone(),
                 config::Language::Python => templates::to_snake_case(handler_name.as_str()),
+                config::Language::Rust => templates::to_snake_case(handler_name.as_str()),
             };
 
             let payload = connection.clone();

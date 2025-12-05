@@ -15,6 +15,7 @@ fn engine_language_to_codegen_language(lang: EngineLanguage) -> Language {
     match lang {
         EngineLanguage::TypeScript => Language::TypeScript,
         EngineLanguage::Python => Language::Python,
+        EngineLanguage::Rust => Language::Rust,
     }
 }
 
@@ -35,6 +36,7 @@ pub async fn execute(
     let language = match lang.as_deref() {
         Some("typescript") | Some("ts") => Language::TypeScript,
         Some("python") | Some("py") => Language::Python,
+        Some("rust") | Some("rs") => Language::Rust,
         None => match &config_path {
             Some(config_path) => match EngineConfig::from_file(config_path) {
                 Ok(config) => {

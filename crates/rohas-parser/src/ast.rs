@@ -135,6 +135,19 @@ impl FieldType {
             FieldType::Array(inner) => format!("list[{}]", inner.to_python()),
         }
     }
+
+    pub fn to_rust(&self) -> String {
+        match self {
+            FieldType::Int => "i64".to_string(),
+            FieldType::Float => "f64".to_string(),
+            FieldType::String => "String".to_string(),
+            FieldType::Boolean => "bool".to_string(),
+            FieldType::DateTime => "chrono::DateTime<chrono::Utc>".to_string(),
+            FieldType::Json => "serde_json::Value".to_string(),
+            FieldType::Custom(name) => name.clone(),
+            FieldType::Array(inner) => format!("Vec<{}>", inner.to_rust()),
+        }
+    }
 }
 
 /// Attribute (e.g., @id, @unique, @default)

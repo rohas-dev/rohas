@@ -53,10 +53,11 @@ impl EngineConfig {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Language {
     TypeScript,
     Python,
+    Rust,
 }
 
 impl From<Language> for rohas_runtime::Language {
@@ -64,6 +65,7 @@ impl From<Language> for rohas_runtime::Language {
         match lang {
             Language::TypeScript => rohas_runtime::Language::TypeScript,
             Language::Python => rohas_runtime::Language::Python,
+            Language::Rust => rohas_runtime::Language::Rust,
         }
     }
 }
@@ -264,6 +266,7 @@ impl TomlConfig {
         let language = match self.project.language.to_lowercase().as_str() {
             "typescript" | "ts" => Language::TypeScript,
             "python" | "py" => Language::Python,
+            "rust" | "rs" => Language::Rust,
             _ => anyhow::bail!("Unsupported language: {}", self.project.language),
         };
 

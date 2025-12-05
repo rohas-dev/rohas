@@ -9,12 +9,15 @@ license = { workspace = true }
 rohas-parser = { workspace = true }
 rohas-engine = { workspace = true }
 rohas-codegen = { workspace = true }
+rohas-runtime = { workspace = true }
 
 tokio = { workspace = true }
 anyhow = { workspace = true }
 tracing = { workspace = true }
 notify = { workspace = true }
 notify-debouncer-full = { workspace = true }
+libloading = "0.9.0"
+sha2 = "0.10"
 
 [dev-dependencies]
 tokio-test = "0.4"

@@ -2,6 +2,7 @@ pub mod config;
 pub mod error;
 pub mod generator;
 pub mod python;
+pub mod rust;
 pub mod templates;
 pub mod typescript;
 
@@ -15,6 +16,7 @@ use std::path::Path;
 pub enum Language {
     TypeScript,
     Python,
+    Rust,
 }
 
 pub fn generate(schema: &Schema, output_dir: &Path, lang: Language) -> Result<()> {

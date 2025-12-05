@@ -1,0 +1,6 @@
+model User {
+  id        Int      @id @auto
+  name      String
+  email     String   @unique
+  createdAt DateTime @default(now)
+}
