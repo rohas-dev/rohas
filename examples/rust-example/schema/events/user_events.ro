@@ -1,0 +1,4 @@
+event UserCreated {
+  payload: User
+  handler: [send_welcome_email]
+}

@@ -14,24 +14,48 @@ pub async fn execute(
 ) -> Result<()> {
     info!("Starting development server...");
 
-    let mut config = match EngineConfig::from_project_root() {
-        Ok(config) => {
-            info!("Loaded configuration from config/rohas.toml");
-            config
-        }
-        Err(e) => {
-            info!("Using default configuration ({})", e);
-            EngineConfig::default()
-        }
-    };
-    config.project_root = std::env::current_dir()?;
     let actual_path = if !schema_path.exists() && schema_path.ends_with("index.ro") {
         schema_path
             .parent()
             .map(|p| p.to_path_buf())
             .unwrap_or(schema_path)
     } else {
-        schema_path
+        schema_path.clone()
+    };
+
+    let project_root = if actual_path.file_name()
+        .and_then(|s| s.to_str())
+        .map(|s| s == "schema")
+        .unwrap_or(false)
+    {
+        actual_path
+            .parent()
+            .map(|p| p.to_path_buf())
+            .unwrap_or_else(|| std::env::current_dir().unwrap_or_default())
+    } else {
+        actual_path.clone()
+    };
+
+    let config_path = project_root.join("config").join("rohas.toml");
+    let mut config = if config_path.exists() {
+        match EngineConfig::from_file(&config_path) {
+            Ok(mut cfg) => {
+                cfg.project_root = project_root.clone();
+                info!("Loaded configuration from {}", config_path.display());
+                cfg
+            }
+            Err(e) => {
+                info!("Failed to load config from {}: {}. Using defaults.", config_path.display(), e);
+                let mut cfg = EngineConfig::default();
+                cfg.project_root = project_root.clone();
+                cfg
+            }
+        }
+    } else {
+        info!("Config file not found: {}. Using default configuration.", config_path.display());
+        let mut cfg = EngineConfig::default();
+        cfg.project_root = project_root.clone();
+        cfg
     };
 
     let dev_server = DevServer::new(actual_path, config.clone(), watch);

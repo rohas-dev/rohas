@@ -2,6 +2,7 @@ use crate::error::{Result, RuntimeError};
 use crate::handler::{Handler, HandlerContext, HandlerResult};
 use crate::node_runtime::NodeRuntime;
 use crate::python_runtime::PythonRuntime;
+use crate::rust_runtime::RustRuntime;
 use crate::{Language, RuntimeConfig};
 use rohas_codegen::templates;
 use std::collections::HashMap;
@@ -15,6 +16,7 @@ pub struct Executor {
     handlers: Arc<RwLock<HashMap<String, Arc<dyn Handler>>>>,
     python_runtime: Arc<PythonRuntime>,
     node_runtime: Arc<NodeRuntime>,
+    rust_runtime: Arc<RustRuntime>,
 }
 
 impl Executor {
@@ -27,15 +29,23 @@ impl Executor {
         node_runtime.set_project_root(config.project_root.clone());
         let node_runtime = Arc::new(node_runtime);
 
-        info!("Executor initialized with Python and Node.js runtimes");
+        let mut rust_runtime = RustRuntime::new().expect("Failed to initialize Rust runtime");
+        rust_runtime.set_project_root(config.project_root.clone());
+        let rust_runtime = Arc::new(rust_runtime);
 
-        Self {
-            config,
+        info!("Executor initialized with Python, Node.js, and Rust runtimes");
+
+        let executor = Self {
+            config: config.clone(),
             handlers: Arc::new(RwLock::new(HashMap::new())),
             python_runtime,
             node_runtime,
-        }
+            rust_runtime: rust_runtime.clone(),
+        };
+
+        executor
     }
+
 
     pub async fn register_handler(&self, handler: Arc<dyn Handler>) {
         let name = handler.name().to_string();
@@ -95,6 +105,7 @@ impl Executor {
         let result = match self.config.language {
             Language::TypeScript => self.execute_typescript(&handler_path, &context).await,
             Language::Python => self.execute_python(&handler_path, &context).await,
+            Language::Rust => self.execute_rust(&handler_path, &context).await,
         };
 
         let execution_time_ms = start.elapsed().as_millis() as u64;
@@ -194,6 +205,17 @@ impl Executor {
             .await
     }
 
+    async fn execute_rust(
+        &self,
+        handler_path: &PathBuf,
+        context: &HandlerContext,
+    ) -> Result<HandlerResult> {
+        debug!("Executing Rust handler (high-performance): {:?}", handler_path);
+        self.rust_runtime
+            .execute_handler(handler_path, context.clone())
+            .await
+    }
+
     pub async fn list_handlers(&self) -> Vec<String> {
         let handlers = self.handlers.read().await;
         handlers.keys().cloned().collect()
@@ -216,8 +238,21 @@ impl Executor {
                 // @TODO Python runtime doesn't cache modules the same way
                 // Module reloading is handled differently in pyo3
             }
+            Language::Rust => {
+                self.rust_runtime.clear_handlers().await;
+            }
         }
         Ok(())
+    }
+
+    /// Get a reference to the Rust runtime for direct handler registration.
+    /// 
+    /// This allows static handler registration:
+    /// ```rust
+    /// executor.rust_runtime().register_handler("my_handler", my_handler_fn).await;
+    /// ```
+    pub fn rust_runtime(&self) -> &Arc<RustRuntime> {
+        &self.rust_runtime
     }
 }
 

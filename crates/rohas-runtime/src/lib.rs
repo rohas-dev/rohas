@@ -3,10 +3,12 @@ pub mod executor;
 pub mod handler;
 pub mod node_runtime;
 pub mod python_runtime;
+pub mod rust_runtime;
 
 pub use error::{Result, RuntimeError};
 pub use executor::Executor;
 pub use handler::{Handler, HandlerContext, HandlerResult};
+pub use rust_runtime::RustRuntime;
 
 #[derive(Debug, Clone)]
 pub struct RuntimeConfig {
@@ -29,6 +31,7 @@ impl Default for RuntimeConfig {
 pub enum Language {
     TypeScript,
     Python,
+    Rust,
 }
 
 impl Language {
@@ -36,6 +39,7 @@ impl Language {
         match self {
             Language::TypeScript => "typescript",
             Language::Python => "python",
+            Language::Rust => "rust",
         }
     }
 
@@ -43,6 +47,7 @@ impl Language {
         match self {
             Language::TypeScript => "ts",
             Language::Python => "py",
+            Language::Rust => "rs",
         }
     }
 }

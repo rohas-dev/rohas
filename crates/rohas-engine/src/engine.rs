@@ -55,7 +55,7 @@ impl Engine {
         } else {
             config.project_root.join(&config.telemetry.path)
         };
-        
+
         let telemetry = match config.telemetry.adapter_type {
             crate::config::TelemetryAdapterType::RocksDB => {
                 Arc::new(
@@ -74,7 +74,7 @@ impl Engine {
                 return Err(EngineError::Initialization("TimescaleDB adapter not yet implemented".to_string()));
             }
         };
-        
+
         let trace_store = Arc::new(crate::telemetry::TraceStore::new(telemetry.clone()));
         let tracing_log_store = Arc::new(crate::tracing_log::TracingLogStore::new(1000)); // Keep last 1000 logs
 
@@ -143,6 +143,17 @@ impl Engine {
         if *initialized {
             warn!("Engine already initialized");
             return Ok(());
+        }
+
+        // For Rust projects, automatically register handlers
+        if self.config.language == crate::config::Language::Rust {
+            let executor_clone = self.executor.clone();
+            let project_root = self.config.project_root.clone();
+            tokio::spawn(async move {
+                if let Err(e) = Self::try_auto_register_rust_handlers(&project_root, executor_clone).await {
+                    tracing::warn!("Could not auto-register Rust handlers: {}. Handlers should be registered manually via init_handlers().", e);
+                }
+            });
         }
 
         info!("Initializing engine components");
@@ -382,6 +393,39 @@ impl Engine {
 
     pub fn create_tracing_log_layer(&self) -> crate::tracing_log::TracingLogLayer {
         crate::tracing_log::TracingLogLayer::new(self.tracing_log_store.clone())
+    }
+
+    pub fn executor(&self) -> &Arc<Executor> {
+        &self.executor
+    }
+
+    async fn try_auto_register_rust_handlers(
+        project_root: &PathBuf,
+        executor: Arc<Executor>,
+    ) -> anyhow::Result<()> {
+        use rohas_runtime::RustRuntime;
+        use std::sync::Arc;
+
+        let rust_runtime = executor.rust_runtime().clone();
+
+        let handlers_rs = project_root.join("src").join("generated").join("handlers.rs");
+        if !handlers_rs.exists() {
+            return Ok(());
+        }
+
+        let content = std::fs::read_to_string(&handlers_rs)?;
+        if !content.contains("set_runtime") {
+            return Ok(());
+        }
+
+        tracing::info!("Registering Rust handlers automatically via set_runtime...");
+
+        tracing::warn!("Automatic Rust handler registration requires calling set_runtime().");
+        tracing::warn!("Since the generated project is a separate crate, please call:");
+        tracing::warn!("  rust_example::set_runtime(runtime);");
+        tracing::warn!("Or: rust_example::init_handlers(runtime).await");
+
+        Ok(())
     }
 }
 

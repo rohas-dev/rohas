@@ -259,6 +259,7 @@ async fn api_handler(
     let handler_name = match state.config.language {
         config::Language::TypeScript => api.name.clone(),
         config::Language::Python => templates::to_snake_case(api.name.clone().as_str()),
+        config::Language::Rust => templates::to_snake_case(api.name.clone().as_str()),
     };
 
     let api_path = api.path.clone();
@@ -421,6 +422,7 @@ async fn execute_middlewares(
         let middleware_handler_name = match state.config.language {
             config::Language::TypeScript => middleware_name.clone(),
             config::Language::Python => templates::to_snake_case(middleware_name.as_str()),
+            config::Language::Rust => templates::to_snake_case(middleware_name.as_str()),
         };
 
         debug!("Executing middleware: {}", middleware_handler_name);

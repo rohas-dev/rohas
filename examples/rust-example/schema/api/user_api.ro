@@ -1,0 +1,19 @@
+input CreateUserInput {
+  name: String
+  email: String
+}
+
+api CreateUser {
+  method: POST
+  path: "/users"
+  body: CreateUserInput
+  response: User
+  triggers: [UserCreated]
+}
+
+
+api HelloWorld {
+  method: GET
+  path: "/hello-world"
+  response: String
+}
