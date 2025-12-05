@@ -249,7 +249,18 @@ impl Executor {
     /// 
     /// This allows static handler registration:
     /// ```rust
-    /// executor.rust_runtime().register_handler("my_handler", my_handler_fn).await;
+    /// use rohas_runtime::{Executor, RuntimeConfig, HandlerContext, HandlerResult};
+    ///
+    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+    /// let executor = Executor::new(RuntimeConfig::default());
+    ///
+    /// async fn my_handler_fn(ctx: HandlerContext) -> rohas_runtime::error::Result<HandlerResult> {
+    ///     Ok(HandlerResult::success(serde_json::json!({}), 0))
+    /// }
+    ///
+    /// executor.rust_runtime().register_handler("my_handler".to_string(), my_handler_fn).await;
+    /// # Ok(())
+    /// # }
     /// ```
     pub fn rust_runtime(&self) -> &Arc<RustRuntime> {
         &self.rust_runtime

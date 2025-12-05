@@ -144,15 +144,20 @@ impl Default for RustRuntime {
 ///
 /// # Example
 /// ```rust
-/// use rohas_runtime::{rust_runtime, HandlerContext, HandlerResult};
+/// use rohas_runtime::{RustRuntime, HandlerContext, HandlerResult};
 ///
-/// async fn my_handler(ctx: HandlerContext) -> Result<HandlerResult> {
+/// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+/// let runtime = RustRuntime::new()?;
+///
+/// async fn my_handler(ctx: HandlerContext) -> rohas_runtime::error::Result<HandlerResult> {
 ///     // Handler implementation
 ///     Ok(HandlerResult::success(serde_json::json!({}), 0))
 /// }
 ///
 /// // Register the handler
 /// runtime.register_handler("my_handler".to_string(), my_handler).await;
+/// # Ok(())
+/// # }
 /// ```
 #[macro_export]
 macro_rules! register_rust_handler {
