@@ -4,7 +4,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 pub fn generate_package_json(_schema: &Schema, output_dir: &Path) -> Result<()> {
-    let project_root = get_project_root(output_dir);
+    let project_root = get_project_root(output_dir)?;
     let project_name = extract_project_name(&project_root);
 
     let content = format!(
@@ -45,7 +45,7 @@ pub fn generate_package_json(_schema: &Schema, output_dir: &Path) -> Result<()> 
 }
 
 pub fn generate_tsconfig_json(_schema: &Schema, output_dir: &Path) -> Result<()> {
-    let project_root = get_project_root(output_dir);
+    let project_root = get_project_root(output_dir)?;
     let content = r#"{
   "compilerOptions": {
     "target": "ES2022",
@@ -88,7 +88,7 @@ pub fn generate_tsconfig_json(_schema: &Schema, output_dir: &Path) -> Result<()>
 }
 
 pub fn generate_requirements_txt(_schema: &Schema, output_dir: &Path) -> Result<()> {
-    let project_root = get_project_root(output_dir);
+    let project_root = get_project_root(output_dir)?;
     let content = r#"# Python dependencies for Rohas project
 # Add your project-specific dependencies here
 
@@ -102,7 +102,7 @@ typing-extensions>=4.0.0
 }
 
 pub fn generate_pyproject_toml(_schema: &Schema, output_dir: &Path) -> Result<()> {
-    let project_root = get_project_root(output_dir);
+    let project_root = get_project_root(output_dir)?;
     let project_name = extract_project_name(&project_root);
 
     let content = format!(
@@ -146,7 +146,7 @@ target-version = "py39"
 }
 
 pub fn generate_cargo_toml(_schema: &Schema, output_dir: &Path) -> Result<()> {
-    let project_root = get_project_root(output_dir);
+    let project_root = get_project_root(output_dir)?;
     let project_name = extract_project_name(&project_root);
 
     let lib_name = project_name.replace('-', "_");
@@ -183,7 +183,28 @@ tokio-test = "0.4"
 }
 
 pub fn generate_gitignore(_schema: &Schema, output_dir: &Path) -> Result<()> {
-    let project_root = get_project_root(output_dir);
+    let project_root = get_project_root(output_dir)
+        .map_err(|e| crate::error::CodegenError::GenerationFailed(format!(
+            "Failed to get project root from output_dir {}: {}",
+            output_dir.display(),
+            e
+        )))?;
+    
+    let gitignore_path = project_root.join(".gitignore");
+    
+    if let Some(parent) = gitignore_path.parent() {
+        fs::create_dir_all(parent).map_err(|e| {
+            crate::error::CodegenError::Io(std::io::Error::new(
+                e.kind(),
+                format!(
+                    "Failed to create parent directory {} for .gitignore: {}",
+                    parent.display(),
+                    e
+                )
+            ))
+        })?;
+    }
+    
     let content = r#"# Dependencies
 node_modules/
 __pycache__/
@@ -238,12 +259,22 @@ coverage/
 src/generated/
 "#;
 
-    fs::write(project_root.join(".gitignore"), content)?;
+    fs::write(&gitignore_path, content)
+        .map_err(|e| crate::error::CodegenError::Io(std::io::Error::new(
+            e.kind(),
+            format!("Failed to write .gitignore to {}: {}", gitignore_path.display(), e)
+        )))?;
     Ok(())
 }
 
 pub fn generate_editorconfig(_schema: &Schema, output_dir: &Path) -> Result<()> {
-    let project_root = get_project_root(output_dir);
+    let project_root = get_project_root(output_dir)?;
+    let editorconfig_path = project_root.join(".editorconfig");
+    
+    if let Some(parent) = editorconfig_path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    
     let content = r#"# EditorConfig is awesome: https://EditorConfig.org
 
 root = true
@@ -270,12 +301,21 @@ indent_size = 2
 trim_trailing_whitespace = false
 "#;
 
-    fs::write(project_root.join(".editorconfig"), content)?;
+    fs::write(&editorconfig_path, content)
+        .map_err(|e| crate::error::CodegenError::Io(std::io::Error::new(
+            e.kind(),
+            format!("Failed to write .editorconfig to {}: {}", editorconfig_path.display(), e)
+        )))?;
     Ok(())
 }
 
 pub fn generate_readme(schema: &Schema, output_dir: &Path) -> Result<()> {
-    let project_root = get_project_root(output_dir);
+    let project_root = get_project_root(output_dir)
+        .map_err(|e| crate::error::CodegenError::GenerationFailed(format!(
+            "Failed to get project root from output_dir {} in generate_readme: {}",
+            output_dir.display(),
+            e
+        )))?;
     let project_name = extract_project_name(&project_root);
     let has_apis = !schema.apis.is_empty();
     let has_events = !schema.events.is_empty();
@@ -400,22 +440,31 @@ MIT
     );
 
     let readme_path = project_root.join("README.md");
+    
+    if let Some(parent) = readme_path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    
     if !readme_path.exists() {
-        fs::write(readme_path, content)?;
+        fs::write(&readme_path, content)
+            .map_err(|e| crate::error::CodegenError::Io(std::io::Error::new(
+                e.kind(),
+                format!("Failed to write README.md to {}: {}", readme_path.display(), e)
+            )))?;
     }
 
     Ok(())
 }
 
 pub fn generate_nvmrc(_schema: &Schema, output_dir: &Path) -> Result<()> {
-    let project_root = get_project_root(output_dir);
+    let project_root = get_project_root(output_dir)?;
     let content = "18.0.0\n";
     fs::write(project_root.join(".nvmrc"), content)?;
     Ok(())
 }
 
 pub fn generate_prettierrc(_schema: &Schema, output_dir: &Path) -> Result<()> {
-    let project_root = get_project_root(output_dir);
+    let project_root = get_project_root(output_dir)?;
     let content = r#"{
   "semi": true,
   "trailingComma": "es5",
@@ -432,7 +481,7 @@ pub fn generate_prettierrc(_schema: &Schema, output_dir: &Path) -> Result<()> {
 }
 
 pub fn generate_prettierignore(_schema: &Schema, output_dir: &Path) -> Result<()> {
-    let project_root = get_project_root(output_dir);
+    let project_root = get_project_root(output_dir)?;
     let content = r#"node_modules/
 dist/
 build/
@@ -447,7 +496,7 @@ src/generated/
 }
 
 pub fn generate_rspack_config(_schema: &Schema, output_dir: &Path) -> Result<()> {
-    let project_root = get_project_root(output_dir);
+    let project_root = get_project_root(output_dir)?;
     let content = r#"const path = require('path');
 const fs = require('fs');
 
@@ -548,12 +597,63 @@ module.exports = {
     Ok(())
 }
 
-fn get_project_root(output_dir: &Path) -> PathBuf {
-    if output_dir.file_name().and_then(|s| s.to_str()) == Some("src") {
-        output_dir.parent().unwrap_or(output_dir).to_path_buf()
+fn get_project_root(output_dir: &Path) -> Result<PathBuf> {
+    let project_root = if output_dir.file_name().and_then(|s| s.to_str()) == Some("src") {
+        match output_dir.parent() {
+            Some(parent) => {
+                let parent_path = parent.to_path_buf();
+                if parent_path.as_os_str().is_empty() || parent_path == Path::new("/") {
+                    output_dir.to_path_buf()
+                } else {
+                    parent_path
+                }
+            }
+            None => {
+                return Err(crate::error::CodegenError::GenerationFailed(format!(
+                    "Cannot determine project root from output_dir: {}",
+                    output_dir.display()
+                )));
+            }
+        }
     } else {
         output_dir.to_path_buf()
+    };
+    match fs::metadata(&project_root) {
+        Ok(metadata) => {
+            if !metadata.is_dir() {
+                return Err(crate::error::CodegenError::GenerationFailed(format!(
+                    "Project root path exists but is not a directory: {}",
+                    project_root.display()
+                )));
+            }
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            fs::create_dir_all(&project_root).map_err(|e| {
+                crate::error::CodegenError::Io(std::io::Error::new(
+                    e.kind(),
+                    format!(
+                        "Failed to create project root directory {} (from output_dir {}): {}",
+                        project_root.display(),
+                        output_dir.display(),
+                        e
+                    )
+                ))
+            })?;
+        }
+        Err(e) => {
+            return Err(crate::error::CodegenError::Io(std::io::Error::new(
+                e.kind(),
+                format!(
+                    "Failed to check project root directory {} (from output_dir {}): {}",
+                    project_root.display(),
+                    output_dir.display(),
+                    e
+                )
+            )));
+        }
     }
+    
+    Ok(project_root)
 }
 
 fn extract_project_name(project_root: &Path) -> String {

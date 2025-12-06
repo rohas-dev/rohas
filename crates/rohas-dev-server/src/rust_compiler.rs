@@ -51,6 +51,8 @@ impl RustCompiler {
 
         info!("Building Rust project in release mode: {}", self.project_root().display());
 
+        self.ensure_dylib_config()?;
+
         let package_name = self.get_package_name()?;
         let project_name = package_name.replace('-', "_");
 
@@ -200,7 +202,49 @@ impl RustCompiler {
         }
 
         if !dylib_path.exists() {
-            return Err(anyhow::anyhow!("Dylib was not created at expected path: {}", dylib_path.display()));
+            let target_profile_dir = self.project_root().join("target").join("release");
+            let mut diagnostic_msg = format!(
+                "Dylib was not created at expected path: {}\n",
+                dylib_path.display()
+            );
+            
+            if target_profile_dir.exists() {
+                diagnostic_msg.push_str(&format!("Target directory exists: {}\n", target_profile_dir.display()));
+                
+                if let Ok(entries) = fs::read_dir(&target_profile_dir) {
+                    let mut dylib_files = Vec::new();
+                    for entry in entries.flatten() {
+                        let path = entry.path();
+                        if let Some(ext) = path.extension() {
+                            if ext == "dylib" || ext == "so" || ext == "dll" {
+                                if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                                    dylib_files.push(name.to_string());
+                                }
+                            }
+                        }
+                    }
+                    
+                    if !dylib_files.is_empty() {
+                        diagnostic_msg.push_str(&format!("Found {} dylib files in target/release:\n", dylib_files.len()));
+                        for file in &dylib_files {
+                            diagnostic_msg.push_str(&format!("  - {}\n", file));
+                        }
+                        diagnostic_msg.push_str(&format!("\nExpected: {}\n", dylib_path.file_name().and_then(|n| n.to_str()).unwrap_or("unknown")));
+                        diagnostic_msg.push_str("This might indicate a mismatch between the package/lib name in Cargo.toml and the expected dylib name.");
+                    } else {
+                        diagnostic_msg.push_str("No dylib files found in target/release directory.\n");
+                        diagnostic_msg.push_str("This might indicate:\n");
+                        diagnostic_msg.push_str("  1. The build failed to create a dylib\n");
+                        diagnostic_msg.push_str("  2. The crate-type is not set to [\"dylib\"] in Cargo.toml\n");
+                        diagnostic_msg.push_str("  3. The build output is in a different location\n");
+                    }
+                }
+            } else {
+                diagnostic_msg.push_str(&format!("Target directory does not exist: {}\n", target_profile_dir.display()));
+                diagnostic_msg.push_str("The build may have failed or not completed.");
+            }
+            
+            return Err(anyhow::anyhow!("{}", diagnostic_msg));
         }
 
         let dylib_hash = Self::compute_file_hash(&dylib_path)?;
@@ -345,6 +389,37 @@ impl RustCompiler {
         Ok(name)
     }
 
+    fn get_lib_name(&self) -> anyhow::Result<String> {
+        use std::fs;
+
+        let cargo_toml = self.project_root().join("Cargo.toml");
+        let contents = fs::read_to_string(&cargo_toml)?;
+
+        let mut in_lib_section = false;
+        for line in contents.lines() {
+            let line = line.trim();
+            if line.starts_with("[lib]") {
+                in_lib_section = true;
+                continue;
+            }
+            if line.starts_with('[') && line.ends_with(']') {
+                in_lib_section = false;
+                continue;
+            }
+            if in_lib_section && line.starts_with("name =") {
+                if let Some(start) = line.find('"') {
+                    if let Some(end) = line.rfind('"') {
+                        if end > start {
+                            return Ok(line[start + 1..end].to_string());
+                        }
+                    }
+                }
+            }
+        }
+
+        self.get_package_name()
+    }
+
     pub fn get_library_path(&self) -> anyhow::Result<PathBuf> {
         let profile = if cfg!(debug_assertions) {
             "debug"
@@ -357,8 +432,9 @@ impl RustCompiler {
     pub fn get_library_path_for_profile(&self, profile: &str) -> anyhow::Result<PathBuf> {
         let target_dir = self.project_root().join("target");
 
-        let package_name = self.get_package_name()?;
-        let project_name = package_name.replace('-', "_");
+        // Use lib name if specified, otherwise fall back to package name
+        let lib_name = self.get_lib_name()?;
+        let project_name = lib_name.replace('-', "_");
 
         #[cfg(target_os = "macos")]
         let dylib_name = format!("lib{}.dylib", project_name);
@@ -370,6 +446,40 @@ impl RustCompiler {
         let dylib_name = format!("lib{}.so", project_name);
 
         Ok(target_dir.join(profile).join(&dylib_name))
+    }
+
+    fn ensure_dylib_config(&self) -> anyhow::Result<()> {
+        use std::fs;
+
+        let cargo_toml = self.project_root().join("Cargo.toml");
+        if !cargo_toml.exists() {
+            return Err(anyhow::anyhow!("Cargo.toml not found at: {}", cargo_toml.display()));
+        }
+
+        let cargo_content = fs::read_to_string(&cargo_toml)?;
+        let needs_dylib_config = !cargo_content.contains("crate-type") || !cargo_content.contains("dylib");
+
+        if needs_dylib_config {
+            let updated_content = if cargo_content.contains("[lib]") {
+                if cargo_content.contains("crate-type") {
+                    cargo_content.replace(
+                        "crate-type = [",
+                        "crate-type = [\"dylib\", "
+                    )
+                } else {
+                    cargo_content.replace(
+                        "[lib]",
+                        "[lib]\ncrate-type = [\"dylib\", \"rlib\"]"
+                    )
+                }
+            } else {
+                format!("{}\n\n[lib]\ncrate-type = [\"dylib\", \"rlib\"]", cargo_content)
+            };
+            fs::write(&cargo_toml, updated_content)?;
+            info!("Updated Cargo.toml to build as dylib");
+        }
+
+        Ok(())
     }
 
     fn compute_file_hash(path: &PathBuf) -> anyhow::Result<[u8; 32]> {

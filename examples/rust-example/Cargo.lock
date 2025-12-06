@@ -1074,6 +1074,8 @@ dependencies = [
 [[package]]
 name = "rohas-codegen"
 version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "53259f8f13193d8811e334d594d98cd1ac8ba74fc29adb540a6926f75e324c2a"
 dependencies = [
  "anyhow",
  "rohas-parser",
@@ -1087,6 +1089,8 @@ dependencies = [
 [[package]]
 name = "rohas-parser"
 version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ff82225e47bb505727050b06ac6a27657f568f278294c3af0645caf7702fc80e"
 dependencies = [
  "anyhow",
  "pest",
@@ -1100,6 +1104,8 @@ dependencies = [
 [[package]]
 name = "rohas-runtime"
 version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3492f5035be2cb3e62e59c715e742c0fd153b567e6fa188a6a52d4591911aae6"
 dependencies = [
  "anyhow",
  "async-trait",
