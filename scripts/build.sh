@@ -376,14 +376,40 @@ clone_repo() {
 
     # Check if rohas directory exists in current location
     if [[ -d "rohas" ]]; then
-        log_verbose "Directory 'rohas' already exists. Using existing directory."
+        log_verbose "Directory 'rohas' already exists. Resetting to remote..."
         cd rohas
         if [[ -d ".git" ]]; then
+            # Determine the default branch
+            local default_branch
+            default_branch=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' || echo "main")
+            
             if [[ "$VERBOSE" == "true" ]]; then
-                log_info "Updating repository..."
-                git pull || true
+                log_info "Fetching from remote..."
+                git fetch origin || true
+                log_info "Resetting to origin/${default_branch}..."
+                git reset --hard "origin/${default_branch}" || true
             else
-                git pull >/dev/null 2>&1 || true
+                git fetch origin >/dev/null 2>&1 || true
+                git reset --hard "origin/${default_branch}" >/dev/null 2>&1 || true
+            fi
+        fi
+        
+        if [[ -n "${ROHAS_VERSION}" ]]; then
+            log_info "Checking out rohas version: ${ROHAS_VERSION}"
+            if [[ "$VERBOSE" == "true" ]]; then
+                git fetch --tags || true
+                git checkout "${ROHAS_VERSION}" || git checkout "tags/${ROHAS_VERSION}" || {
+                    log_error "Failed to checkout version ${ROHAS_VERSION}"
+                    exit 1
+                }
+            else
+                git fetch --tags >/dev/null 2>&1 || true
+                git checkout "${ROHAS_VERSION}" >/dev/null 2>&1 \
+                    || git checkout "tags/${ROHAS_VERSION}" >/dev/null 2>&1 \
+                    || {
+                        log_error "Failed to checkout version ${ROHAS_VERSION}"
+                        exit 1
+                    }
             fi
         fi
     else
