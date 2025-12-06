@@ -21,6 +21,11 @@ impl Generator {
             output_dir.display()
         );
 
+        if let Some(parent) = output_dir.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        fs::create_dir_all(output_dir)?;
+
         self.create_directory_structure(output_dir)?;
 
         self.generate_common_configs(schema, output_dir)?;
@@ -64,10 +69,43 @@ impl Generator {
     }
 
     fn generate_common_configs(&self, schema: &Schema, output_dir: &Path) -> Result<()> {
+        use tracing::error;
         info!("Generating common configuration files");
-        config::generate_gitignore(schema, output_dir)?;
-        config::generate_editorconfig(schema, output_dir)?;
-        config::generate_readme(schema, output_dir)?;
+        info!("Output directory: {}", output_dir.display());
+        
+        info!("Generating .gitignore...");
+        config::generate_gitignore(schema, output_dir)
+            .map_err(|e| {
+                error!("Failed to generate .gitignore: {}", e);
+                crate::error::CodegenError::GenerationFailed(format!(
+                    "Failed to generate .gitignore: {}",
+                    e
+                ))
+            })?;
+        info!("Generated .gitignore successfully");
+        
+        info!("Generating .editorconfig...");
+        config::generate_editorconfig(schema, output_dir)
+            .map_err(|e| {
+                error!("Failed to generate .editorconfig: {}", e);
+                crate::error::CodegenError::GenerationFailed(format!(
+                    "Failed to generate .editorconfig: {}",
+                    e
+                ))
+            })?;
+        info!("Generated .editorconfig successfully");
+        
+        info!("Generating README.md...");
+        config::generate_readme(schema, output_dir)
+            .map_err(|e| {
+                error!("Failed to generate README.md: {}", e);
+                crate::error::CodegenError::GenerationFailed(format!(
+                    "Failed to generate README.md: {}",
+                    e
+                ))
+            })?;
+        info!("Generated README.md successfully");
+        
         Ok(())
     }
 
@@ -112,14 +150,33 @@ impl Generator {
     }
 
     fn generate_rust(&self, schema: &Schema, output_dir: &Path) -> Result<()> {
+        use tracing::error;
+        
+        info!("Generating Rust code...");
+        info!("Generating state...");
         rust::generate_state(output_dir)?;
+        info!("Generating models...");
         rust::generate_models(schema, output_dir)?;
+        info!("Generating DTOs...");
         rust::generate_dtos(schema, output_dir)?;
+        info!("Generating APIs...");
         rust::generate_apis(schema, output_dir)?;
+        info!("Generating events...");
         rust::generate_events(schema, output_dir)?;
+        info!("Generating crons...");
         rust::generate_crons(schema, output_dir)?;
-        rust::generate_websockets(schema, output_dir)?;
+        info!("Generating websockets...");
+        rust::generate_websockets(schema, output_dir)
+            .map_err(|e| {
+                error!("Failed to generate websockets: {}", e);
+                crate::error::CodegenError::GenerationFailed(format!(
+                    "Failed to generate websockets: {}",
+                    e
+                ))
+            })?;
+        info!("Generating middlewares...");
         rust::generate_middlewares(schema, output_dir)?;
+        info!("Generating lib.rs...");
         rust::generate_lib_rs(schema, output_dir)?;
 
         info!("Generating Rust configuration files");

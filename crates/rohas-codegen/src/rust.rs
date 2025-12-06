@@ -4,6 +4,22 @@ use rohas_parser::{Api, Event, FieldType, Model, Schema, WebSocket};
 use std::fs;
 use std::path::Path;
 
+/// Rust reserved keywords that need to be escaped with r#
+const RUST_RESERVED_KEYWORDS: &[&str] = &[
+    "as", "async", "await", "break", "const", "continue", "crate", "dyn", "else", "enum",
+    "extern", "false", "fn", "for", "if", "impl", "in", "let", "loop", "match", "mod", "move",
+    "mut", "pub", "ref", "return", "self", "Self", "static", "struct", "super", "trait", "true",
+    "type", "unsafe", "use", "where", "while",
+];
+
+fn escape_rust_keyword(name: &str) -> String {
+    if RUST_RESERVED_KEYWORDS.contains(&name) {
+        format!("r#{}", name)
+    } else {
+        name.to_string()
+    }
+}
+
 pub fn generate_models(schema: &Schema, output_dir: &Path) -> Result<()> {
     let models_dir = output_dir.join("generated/models");
 
@@ -41,7 +57,13 @@ fn generate_model_content(model: &Model) -> String {
             rust_type
         };
 
-        let field_name = &field.name;
+        let field_name = escape_rust_keyword(&field.name);
+        let serde_attr = if RUST_RESERVED_KEYWORDS.contains(&field.name.as_str()) {
+            format!("    #[serde(rename = \"{}\")]\n", field.name)
+        } else {
+            String::new()
+        };
+        content.push_str(&serde_attr);
         content.push_str(&format!("    pub {}: {},\n", field_name, type_hint));
     }
 
@@ -119,9 +141,9 @@ fn generate_api_content(api: &Api) -> String {
     if let Some(body_type) = &api.body {
         let body_type_snake = templates::to_snake_case(body_type);
         if body_type.ends_with("Input") {
-            content.push_str(&format!("use super::super::dto::{}::{};\n", body_type_snake, body_type));
+            content.push_str(&format!("use crate::generated::dto::{}::{};\n", body_type_snake, body_type));
         } else {
-            content.push_str(&format!("use super::super::models::{}::{};\n", body_type_snake, body_type));
+            content.push_str(&format!("use crate::generated::models::{}::{};\n", body_type_snake, body_type));
         }
     }
 
@@ -129,7 +151,7 @@ fn generate_api_content(api: &Api) -> String {
     let is_custom_response = matches!(response_field_type, rohas_parser::FieldType::Custom(_));
     if is_custom_response {
         let response_type_snake = templates::to_snake_case(&api.response);
-        content.push_str(&format!("use super::super::models::{}::{};\n", response_type_snake, api.response));
+        content.push_str(&format!("use crate::generated::models::{}::{};\n", response_type_snake, api.response));
     }
     content.push_str("\n");
 
@@ -333,11 +355,23 @@ fn generate_cron_handler_stub(cron: &rohas_parser::Cron) -> String {
 
 pub fn generate_websockets(schema: &Schema, output_dir: &Path) -> Result<()> {
     let ws_dir = output_dir.join("generated/websockets");
+    
+    fs::create_dir_all(&ws_dir)?;
 
     for ws in &schema.websockets {
-        let content = generate_websocket_content(ws);
+        let content = generate_websocket_content(ws, schema);
         let file_name = format!("{}.rs", templates::to_snake_case(&ws.name));
-        fs::write(ws_dir.join(file_name), content)?;
+        let file_path = ws_dir.join(&file_name);
+        fs::write(&file_path, content).map_err(|e| {
+            crate::error::CodegenError::Io(std::io::Error::new(
+                e.kind(),
+                format!(
+                    "Failed to write websocket file {}: {}",
+                    file_path.display(),
+                    e
+                )
+            ))
+        })?;
     }
 
     let mut mod_content = String::new();
@@ -354,13 +388,24 @@ pub fn generate_websockets(schema: &Schema, output_dir: &Path) -> Result<()> {
     fs::write(ws_dir.join("mod.rs"), mod_content)?;
 
     let handlers_dir = output_dir.join("handlers/websockets");
+    fs::create_dir_all(&handlers_dir)?;
+    
     for ws in &schema.websockets {
         for handler in &ws.on_connect {
             let file_name = format!("{}.rs", handler);
             let handler_path = handlers_dir.join(&file_name);
             if !handler_path.exists() {
                 let content = generate_websocket_handler_stub(ws, handler, "connect");
-                fs::write(handler_path, content)?;
+                fs::write(&handler_path, content).map_err(|e| {
+                    crate::error::CodegenError::Io(std::io::Error::new(
+                        e.kind(),
+                        format!(
+                            "Failed to write websocket handler {}: {}",
+                            handler_path.display(),
+                            e
+                        )
+                    ))
+                })?;
             }
         }
         for handler in &ws.on_message {
@@ -368,7 +413,16 @@ pub fn generate_websockets(schema: &Schema, output_dir: &Path) -> Result<()> {
             let handler_path = handlers_dir.join(&file_name);
             if !handler_path.exists() {
                 let content = generate_websocket_handler_stub(ws, handler, "message");
-                fs::write(handler_path, content)?;
+                fs::write(&handler_path, content).map_err(|e| {
+                    crate::error::CodegenError::Io(std::io::Error::new(
+                        e.kind(),
+                        format!(
+                            "Failed to write websocket handler {}: {}",
+                            handler_path.display(),
+                            e
+                        )
+                    ))
+                })?;
             }
         }
         for handler in &ws.on_disconnect {
@@ -376,7 +430,16 @@ pub fn generate_websockets(schema: &Schema, output_dir: &Path) -> Result<()> {
             let handler_path = handlers_dir.join(&file_name);
             if !handler_path.exists() {
                 let content = generate_websocket_handler_stub(ws, handler, "disconnect");
-                fs::write(handler_path, content)?;
+                fs::write(&handler_path, content).map_err(|e| {
+                    crate::error::CodegenError::Io(std::io::Error::new(
+                        e.kind(),
+                        format!(
+                            "Failed to write websocket handler {}: {}",
+                            handler_path.display(),
+                            e
+                        )
+                    ))
+                })?;
             }
         }
     }
@@ -384,18 +447,49 @@ pub fn generate_websockets(schema: &Schema, output_dir: &Path) -> Result<()> {
     Ok(())
 }
 
-fn generate_websocket_content(ws: &WebSocket) -> String {
+fn generate_websocket_content(ws: &WebSocket, schema: &Schema) -> String {
     let mut content = String::new();
 
-    content.push_str("use serde::{Deserialize, Serialize};\n\n");
+    content.push_str("use serde::{Deserialize, Serialize};\n");
+    if ws.message.is_some() {
+        content.push_str("use chrono::{DateTime, Utc};\n");
+    }
+    content.push_str("\n");
 
     if let Some(message_type) = &ws.message {
-        let rust_type = FieldType::from_str(message_type).to_rust();
+        let message_field_type = FieldType::from_str(message_type);
+        let is_custom_type = matches!(message_field_type, FieldType::Custom(_));
+        
+        let rust_type = message_field_type.to_rust();
+        
+        if is_custom_type {
+            let message_type_snake = templates::to_snake_case(message_type);
+            // Check if it's an input/DTO type
+            let is_input = schema.inputs.iter().any(|input| input.name == *message_type) 
+                || message_type.ends_with("Input");
+            
+            if is_input {
+                content.push_str(&format!(
+                    "use crate::generated::dto::{}::{};\n",
+                    message_type_snake, message_type
+                ));
+            } else {
+                content.push_str(&format!(
+                    "use crate::generated::models::{}::{};\n",
+                    message_type_snake, message_type
+                ));
+            }
+        }
+        
 
         content.push_str(&format!(
-            "pub type {}Message = {};\n\n",
-            ws.name, rust_type
+            "#[derive(Debug, Clone, Serialize, Deserialize)]\n"
         ));
+        content.push_str(&format!("pub struct {}Message\n", ws.name));
+        content.push_str("{\n");
+        content.push_str(&format!("    pub data: {},\n", rust_type));
+        content.push_str("    pub timestamp: chrono::DateTime<chrono::Utc>,\n");
+        content.push_str("}\n\n");
     }
 
     content.push_str(&format!(
@@ -474,14 +568,25 @@ pub fn generate_middlewares(schema: &Schema, output_dir: &Path) -> Result<()> {
         }
     }
 
-    let handlers_dir = output_dir.join("handlers/middlewares");
+    let middlewares_dir = output_dir.join("middlewares");
+    fs::create_dir_all(&middlewares_dir)?;
+    
     for mw_name in middleware_names {
         let file_name = format!("{}.rs", templates::to_snake_case(&mw_name));
-        let handler_path = handlers_dir.join(&file_name);
+        let handler_path = middlewares_dir.join(&file_name);
 
         if !handler_path.exists() {
             let content = generate_middleware_stub(&mw_name);
-            fs::write(handler_path, content)?;
+            fs::write(&handler_path, content).map_err(|e| {
+                crate::error::CodegenError::Io(std::io::Error::new(
+                    e.kind(),
+                    format!(
+                        "Failed to write middleware handler {}: {}",
+                        handler_path.display(),
+                        e
+                    )
+                ))
+            })?;
         }
     }
 
@@ -651,8 +756,13 @@ pub fn generate_lib_rs(schema: &Schema, output_dir: &Path) -> Result<()> {
 
     // Generate handlers module declarations
     let handlers_dir = output_dir.join("handlers");
-    if handlers_dir.join("api").exists() || handlers_dir.join("events").exists() {
+    let middlewares_dir = output_dir.join("middlewares");
+    if handlers_dir.join("api").exists() || handlers_dir.join("events").exists() || middlewares_dir.exists() {
         main_lib_content.push_str("pub mod handlers;\n\n");
+    }
+    
+    if middlewares_dir.exists() {
+        main_lib_content.push_str("pub mod middlewares;\n\n");
     }
 
     // Add initialization function that can be called to register handlers
@@ -711,6 +821,7 @@ pub fn generate_lib_rs(schema: &Schema, output_dir: &Path) -> Result<()> {
 
 fn generate_handlers_mod(schema: &Schema, output_dir: &Path) -> Result<()> {
     let handlers_dir = output_dir.join("handlers");
+    let middlewares_dir = output_dir.join("middlewares");
     let mut content = String::new();
 
     content.push_str("// Handler module declarations\n\n");
@@ -721,6 +832,10 @@ fn generate_handlers_mod(schema: &Schema, output_dir: &Path) -> Result<()> {
 
     if handlers_dir.join("events").exists() {
         content.push_str("pub mod events;\n");
+    }
+
+    if handlers_dir.join("websockets").exists() {
+        content.push_str("pub mod websockets;\n");
     }
 
     fs::write(handlers_dir.join("mod.rs"), content)?;
@@ -754,6 +869,60 @@ fn generate_handlers_mod(schema: &Schema, output_dir: &Path) -> Result<()> {
         }
 
         fs::write(handlers_dir.join("events").join("mod.rs"), events_mod)?;
+    }
+
+    if handlers_dir.join("websockets").exists() {
+        let mut websockets_mod = String::new();
+        websockets_mod.push_str("// WebSocket handler modules\n\n");
+
+        for ws in &schema.websockets {
+            let mut all_handlers = std::collections::HashSet::new();
+            for handler in &ws.on_connect {
+                all_handlers.insert(handler.clone());
+            }
+            for handler in &ws.on_message {
+                all_handlers.insert(handler.clone());
+            }
+            for handler in &ws.on_disconnect {
+                all_handlers.insert(handler.clone());
+            }
+
+            for handler in all_handlers {
+                let handler_file = handlers_dir.join("websockets").join(format!("{}.rs", handler));
+                if handler_file.exists() {
+                    websockets_mod.push_str(&format!("pub mod {};\n", handler));
+                }
+            }
+        }
+
+        fs::write(handlers_dir.join("websockets").join("mod.rs"), websockets_mod)?;
+    }
+
+    if middlewares_dir.exists() {
+        let mut middlewares_mod = String::new();
+        middlewares_mod.push_str("// Middleware handler modules\n\n");
+
+        let mut middleware_names = std::collections::HashSet::new();
+        for api in &schema.apis {
+            for mw in &api.middlewares {
+                middleware_names.insert(mw.clone());
+            }
+        }
+        for ws in &schema.websockets {
+            for mw in &ws.middlewares {
+                middleware_names.insert(mw.clone());
+            }
+        }
+
+        for mw_name in middleware_names {
+            let mw_snake = templates::to_snake_case(&mw_name);
+            let handler_file = middlewares_dir.join(format!("{}.rs", mw_snake));
+            if handler_file.exists() {
+                middlewares_mod.push_str(&format!("pub mod {};\n", mw_snake));
+            }
+        }
+
+        fs::write(middlewares_dir.join("mod.rs"), middlewares_mod)?;
     }
 
     Ok(())
@@ -850,6 +1019,62 @@ fn generate_handlers_registration(schema: &Schema, output_dir: &Path) -> Result<
         }
     }
 
+    let websockets_handlers_dir = output_dir.join("handlers/websockets");
+    for ws in &schema.websockets {
+        for handler in &ws.on_connect {
+            let handler_file = websockets_handlers_dir.join(format!("{}.rs", handler));
+            if handler_file.exists() {
+                content.push_str(&format!(
+                    "use crate::handlers::websockets::{}::{};\n",
+                    handler, handler
+                ));
+            }
+        }
+        for handler in &ws.on_message {
+            let handler_file = websockets_handlers_dir.join(format!("{}.rs", handler));
+            if handler_file.exists() {
+                content.push_str(&format!(
+                    "use crate::handlers::websockets::{}::{};\n",
+                    handler, handler
+                ));
+            }
+        }
+        for handler in &ws.on_disconnect {
+            let handler_file = websockets_handlers_dir.join(format!("{}.rs", handler));
+            if handler_file.exists() {
+                content.push_str(&format!(
+                    "use crate::handlers::websockets::{}::{};\n",
+                    handler, handler
+                ));
+            }
+        }
+    }
+
+    let middlewares_dir = output_dir.join("middlewares");
+    let mut middleware_names = std::collections::HashSet::new();
+    for api in &schema.apis {
+        for mw in &api.middlewares {
+            middleware_names.insert(mw.clone());
+        }
+    }
+    for ws in &schema.websockets {
+        for mw in &ws.middlewares {
+            middleware_names.insert(mw.clone());
+        }
+    }
+
+    for mw_name in &middleware_names {
+        let mw_snake = templates::to_snake_case(mw_name);
+        let handler_file = middlewares_dir.join(format!("{}.rs", mw_snake));
+        if handler_file.exists() {
+            let handler_fn_name = format!("{}_middleware", mw_snake);
+            content.push_str(&format!(
+                "use crate::middlewares::{}::{};\n",
+                mw_snake, handler_fn_name
+            ));
+        }
+    }
+
     content.push_str("\n");
     content.push_str("/// Register all handlers with the Rust runtime.\n");
     content.push_str("/// This function should be called during engine initialization.\n");
@@ -911,6 +1136,218 @@ fn generate_handlers_registration(schema: &Schema, output_dir: &Path) -> Result<
             content.push_str(&format!(
                 "        info!(\"Registered handler: {}\");\n",
                 handler_name
+            ));
+        }
+    }
+
+    let websockets_handlers_dir = output_dir.join("handlers/websockets");
+    for ws in &schema.websockets {
+        let ws_module = templates::to_snake_case(&ws.name);
+        
+        for handler in &ws.on_connect {
+            let handler_file = websockets_handlers_dir.join(format!("{}.rs", handler));
+            if handler_file.exists() {
+                content.push_str(&format!(
+                    "        // Register WebSocket connect handler: {}\n",
+                    handler
+                ));
+                content.push_str(&format!(
+                    "        runtime.register_handler(\n"
+                ));
+                content.push_str(&format!(
+                    "            \"{}\".to_string(),\n",
+                    handler
+                ));
+                content.push_str(&format!(
+                    "            |ctx: HandlerContext| async move {{\n"
+                ));
+                content.push_str(&format!(
+                    "                // Parse connection from context\n"
+                ));
+                content.push_str(&format!(
+                    "                let connection: crate::generated::websockets::{}::{}Connection = serde_json::from_value(ctx.payload.clone())?;\n",
+                    ws_module, ws.name
+                ));
+                content.push_str(&format!(
+                    "                let mut state = crate::generated::state::State::new(&ctx.handler_name);\n"
+                ));
+                content.push_str(&format!(
+                    "                let result = {}(connection, &mut state).await?;\n",
+                    handler
+                ));
+                content.push_str(&format!(
+                    "                Ok(result)\n"
+                ));
+                content.push_str(&format!(
+                    "            }}\n"
+                ));
+                content.push_str(&format!(
+                    "        ).await;\n"
+                ));
+                content.push_str(&format!(
+                    "        info!(\"Registered WebSocket connect handler: {}\");\n",
+                    handler
+                ));
+            }
+        }
+        
+        for handler in &ws.on_message {
+            let handler_file = websockets_handlers_dir.join(format!("{}.rs", handler));
+            if handler_file.exists() {
+                content.push_str(&format!(
+                    "        // Register WebSocket message handler: {}\n",
+                    handler
+                ));
+                content.push_str(&format!(
+                    "        runtime.register_handler(\n"
+                ));
+                content.push_str(&format!(
+                    "            \"{}\".to_string(),\n",
+                    handler
+                ));
+                content.push_str(&format!(
+                    "            |ctx: HandlerContext| async move {{\n"
+                ));
+                content.push_str(&format!(
+                    "                // Parse message and connection from context payload\n"
+                ));
+                content.push_str(&format!(
+                    "                let payload: serde_json::Value = ctx.payload.clone();\n"
+                ));
+                if ws.message.is_some() {
+                    content.push_str(&format!(
+                        "                let message: crate::generated::websockets::{}::{}Message = serde_json::from_value(payload.get(\"message\").cloned().unwrap_or(serde_json::json!({{}})))?;\n",
+                        ws_module, ws.name
+                    ));
+                }
+                content.push_str(&format!(
+                    "                let connection: crate::generated::websockets::{}::{}Connection = serde_json::from_value(payload.get(\"connection\").cloned().unwrap_or(serde_json::json!({{}})))?;\n",
+                    ws_module, ws.name
+                ));
+                content.push_str(&format!(
+                    "                let mut state = crate::generated::state::State::new(&ctx.handler_name);\n"
+                ));
+                if ws.message.is_some() {
+                    content.push_str(&format!(
+                        "                let result = {}(message, connection, &mut state).await?;\n",
+                        handler
+                    ));
+                } else {
+                    content.push_str(&format!(
+                        "                let result = {}(connection, &mut state).await?;\n",
+                        handler
+                    ));
+                }
+                content.push_str(&format!(
+                    "                Ok(result)\n"
+                ));
+                content.push_str(&format!(
+                    "            }}\n"
+                ));
+                content.push_str(&format!(
+                    "        ).await;\n"
+                ));
+                content.push_str(&format!(
+                    "        info!(\"Registered WebSocket message handler: {}\");\n",
+                    handler
+                ));
+            }
+        }
+        
+        for handler in &ws.on_disconnect {
+            let handler_file = websockets_handlers_dir.join(format!("{}.rs", handler));
+            if handler_file.exists() {
+                content.push_str(&format!(
+                    "        // Register WebSocket disconnect handler: {}\n",
+                    handler
+                ));
+                content.push_str(&format!(
+                    "        runtime.register_handler(\n"
+                ));
+                content.push_str(&format!(
+                    "            \"{}\".to_string(),\n",
+                    handler
+                ));
+                content.push_str(&format!(
+                    "            |ctx: HandlerContext| async move {{\n"
+                ));
+                content.push_str(&format!(
+                    "                // Parse connection from context\n"
+                ));
+                content.push_str(&format!(
+                    "                let connection: crate::generated::websockets::{}::{}Connection = serde_json::from_value(ctx.payload.clone())?;\n",
+                    ws_module, ws.name
+                ));
+                content.push_str(&format!(
+                    "                let result = {}(connection).await?;\n",
+                    handler
+                ));
+                content.push_str(&format!(
+                    "                Ok(result)\n"
+                ));
+                content.push_str(&format!(
+                    "            }}\n"
+                ));
+                content.push_str(&format!(
+                    "        ).await;\n"
+                ));
+                content.push_str(&format!(
+                    "        info!(\"Registered WebSocket disconnect handler: {}\");\n",
+                    handler
+                ));
+            }
+        }
+    }
+
+
+    let middlewares_dir = output_dir.join("middlewares");
+    let mut middleware_names = std::collections::HashSet::new();
+    for api in &schema.apis {
+        for mw in &api.middlewares {
+            middleware_names.insert(mw.clone());
+        }
+    }
+    for ws in &schema.websockets {
+        for mw in &ws.middlewares {
+            middleware_names.insert(mw.clone());
+        }
+    }
+
+    for mw_name in middleware_names {
+        let mw_snake = templates::to_snake_case(&mw_name);
+        let handler_file = middlewares_dir.join(format!("{}.rs", mw_snake));
+        if handler_file.exists() {
+            let handler_fn_name = format!("{}_middleware", mw_snake);
+            content.push_str(&format!(
+                "        // Register middleware handler: {}\n",
+                mw_name
+            ));
+            content.push_str(&format!(
+                "        runtime.register_handler(\n"
+            ));
+            content.push_str(&format!(
+                "            \"{}\".to_string(),\n",
+                mw_snake
+            ));
+            content.push_str(&format!(
+                "            |ctx: HandlerContext| async move {{\n"
+            ));
+            content.push_str(&format!(
+                "                let mut state = crate::generated::state::State::new(&ctx.handler_name);\n"
+            ));
+            content.push_str(&format!(
+                "                {}(ctx, &mut state).await\n",
+                handler_fn_name
+            ));
+            content.push_str(&format!(
+                "            }}\n"
+            ));
+            content.push_str(&format!(
+                "        ).await;\n"
+            ));
+            content.push_str(&format!(
+                "        info!(\"Registered middleware handler: {}\");\n",
+                mw_snake
             ));
         }
     }
