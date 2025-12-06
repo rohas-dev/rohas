@@ -4,6 +4,8 @@ version = { workspace = true }
 edition = { workspace = true }
 authors = { workspace = true }
 license = { workspace = true }
+description = "NATS messaging adapter for Rohas event-driven applications"
+repository = { workspace = true }
 
 [dependencies]
 tokio = { workspace = true }

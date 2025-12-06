@@ -4,6 +4,8 @@ version = { workspace = true }
 edition = { workspace = true }
 authors = { workspace = true }
 license = { workspace = true }
+description = "AWS adapter for Rohas event-driven applications supporting SQS and EventBridge"
+repository = { workspace = true }
 
 [dependencies]
 tokio = { workspace = true }

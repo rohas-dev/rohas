@@ -88,20 +88,20 @@ mockall = "0.14.0"
 proptest = "1.4"
 
 # Internal workspace crates
-rohas-parser = { path = "crates/rohas-parser" }
-rohas-codegen = { path = "crates/rohas-codegen" }
-rohas-runtime = { path = "crates/rohas-runtime" }
-rohas-engine = { path = "crates/rohas-engine" }
-rohas-cron = { path = "crates/rohas-cron" }
-rohas-cli = { path = "crates/rohas-cli" }
-rohas-dev-server = { path = "crates/rohas-dev-server" }
-adapter-memory = { path = "crates/rohas-adapters/adapter-memory" }
-adapter-nats = { path = "crates/rohas-adapters/adapter-nats" }
-adapter-kafka = { path = "crates/rohas-adapters/adapter-kafka" }
-adapter-rabbitmq = { path = "crates/rohas-adapters/adapter-rabbitmq" }
-adapter-aws = { path = "crates/rohas-adapters/adapter-aws" }
-adapter-rocksdb = { path = "crates/rohas-adapters/adapter-rocksdb" }
-rohas-telemetry = { path = "crates/rohas-telemetry" }
+rohas-parser = { version = "0.1.0", path = "crates/rohas-parser" }
+rohas-codegen = { version = "0.1.0", path = "crates/rohas-codegen" }
+rohas-runtime = { version = "0.1.0", path = "crates/rohas-runtime" }
+rohas-engine = { version = "0.1.0", path = "crates/rohas-engine" }
+rohas-cron = { version = "0.1.0", path = "crates/rohas-cron" }
+rohas-cli = { version = "0.1.0", path = "crates/rohas-cli" }
+rohas-dev-server = { version = "0.1.0", path = "crates/rohas-dev-server" }
+adapter-memory = { version = "0.1.0", path = "crates/rohas-adapters/adapter-memory" }
+adapter-nats = { version = "0.1.0", path = "crates/rohas-adapters/adapter-nats" }
+adapter-kafka = { version = "0.1.0", path = "crates/rohas-adapters/adapter-kafka" }
+adapter-rabbitmq = { version = "0.1.0", path = "crates/rohas-adapters/adapter-rabbitmq" }
+adapter-aws = { version = "0.1.0", path = "crates/rohas-adapters/adapter-aws" }
+adapter-rocksdb = { version = "0.1.0", path = "crates/rohas-adapters/adapter-rocksdb" }
+rohas-telemetry = { version = "0.1.0", path = "crates/rohas-telemetry" }
 
 [profile.release]
 opt-level = 3

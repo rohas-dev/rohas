@@ -4,6 +4,8 @@ version = { workspace = true }
 edition = { workspace = true }
 authors = { workspace = true }
 license = { workspace = true }
+description = "Telemetry library for Rohas providing tracing, metrics, and logging"
+repository = { workspace = true }
 
 [dependencies]
 tokio = { workspace = true }

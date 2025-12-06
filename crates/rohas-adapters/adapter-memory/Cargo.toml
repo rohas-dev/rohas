@@ -4,6 +4,8 @@ version = { workspace = true }
 edition = { workspace = true }
 authors = { workspace = true }
 license = { workspace = true }
+description = "In-memory event adapter for Rohas, useful for testing and development"
+repository = { workspace = true }
 
 [dependencies]
 tokio = { workspace = true }

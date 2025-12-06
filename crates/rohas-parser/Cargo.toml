@@ -4,6 +4,8 @@ version = { workspace = true }
 edition = { workspace = true }
 authors = { workspace = true }
 license = { workspace = true }
+description = "Parser for Rohas schema files (.ro) defining APIs, events, models, and cron jobs"
+repository = { workspace = true }
 
 [dependencies]
 serde = { workspace = true }

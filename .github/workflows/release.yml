@@ -399,56 +399,56 @@ jobs:
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
-      - name: Publish to crates.io
-        if: steps.check_token.outputs.token_exists == 'true'
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-        run: |
-          set -e
+      # - name: Publish to crates.io
+      #   if: steps.check_token.outputs.token_exists == 'true'
+      #   env:
+      #     CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+      #   run: |
+      #     set -e
           
-          # Function to publish a crate, handling already-published versions gracefully
-          publish_crate() {
-            local crate=$1
-            echo "Publishing $crate..."
-            if cargo publish -p "$crate" --token "$CARGO_REGISTRY_TOKEN" --no-verify 2>&1 | tee /tmp/publish_output.log; then
-              echo "✓ Successfully published $crate"
-            else
-              # Check if the error is due to version already existing
-              if grep -q "already uploaded" /tmp/publish_output.log || grep -q "already exists" /tmp/publish_output.log; then
-                echo "⚠ $crate version already exists on crates.io, skipping"
-              else
-                echo "✗ Failed to publish $crate"
-                exit 1
-              fi
-            fi
-            # Small delay to avoid rate limiting
-            sleep 2
-          }
+      #     # Function to publish a crate, handling already-published versions gracefully
+      #     publish_crate() {
+      #       local crate=$1
+      #       echo "Publishing $crate..."
+      #       if cargo publish -p "$crate" --token "$CARGO_REGISTRY_TOKEN" --no-verify 2>&1 | tee /tmp/publish_output.log; then
+      #         echo "✓ Successfully published $crate"
+      #       else
+      #         # Check if the error is due to version already existing
+      #         if grep -q "already uploaded" /tmp/publish_output.log || grep -q "already exists" /tmp/publish_output.log; then
+      #           echo "⚠ $crate version already exists on crates.io, skipping"
+      #         else
+      #           echo "✗ Failed to publish $crate"
+      #           exit 1
+      #         fi
+      #       fi
+      #       # Small delay to avoid rate limiting
+      #       sleep 2
+      #     }
           
-          # Publish crates in dependency order
-          # Base crates first
-          publish_crate rohas-parser
-          publish_crate rohas-runtime
-          publish_crate rohas-telemetry
+      #     # Publish crates in dependency order
+      #     # Base crates first
+      #     publish_crate rohas-parser
+      #     publish_crate rohas-runtime
+      #     publish_crate rohas-telemetry
           
-          # Adapters (can be published in parallel, but do sequentially to avoid rate limits)
-          publish_crate adapter-memory
-          publish_crate adapter-nats
-          publish_crate adapter-kafka
-          publish_crate adapter-rabbitmq
-          publish_crate adapter-aws
-          publish_crate adapter-rocksdb
+      #     # Adapters (can be published in parallel, but do sequentially to avoid rate limits)
+      #     publish_crate adapter-memory
+      #     publish_crate adapter-nats
+      #     publish_crate adapter-kafka
+      #     publish_crate adapter-rabbitmq
+      #     publish_crate adapter-aws
+      #     publish_crate adapter-rocksdb
           
-          # Codegen and engine (depend on parser/runtime)
-          publish_crate rohas-codegen
-          publish_crate rohas-engine
-          publish_crate rohas-cron
+      #     # Codegen and engine (depend on parser/runtime)
+      #     publish_crate rohas-codegen
+      #     publish_crate rohas-engine
+      #     publish_crate rohas-cron
           
-          # CLI and dev-server (depend on everything)
-          publish_crate rohas-dev-server
-          publish_crate rohas-cli
+      #     # CLI and dev-server (depend on everything)
+      #     publish_crate rohas-dev-server
+      #     publish_crate rohas-cli
           
-          echo "✓ All crates published successfully!"
+      #     echo "✓ All crates published successfully!"
 
   create-release:
     name: Create Release

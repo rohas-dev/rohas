@@ -4,6 +4,8 @@ version = { workspace = true }
 edition = { workspace = true }
 authors = { workspace = true }
 license = { workspace = true }
+description = "Development server for Rohas with hot reload and workbench UI"
+repository = { workspace = true }
 
 [dependencies]
 rohas-parser = { workspace = true }

@@ -164,7 +164,7 @@ name = "{}"
 path = "src/lib.rs"
 
 [dependencies]
-rohas-runtime = {{ path = "../../crates/rohas-runtime" }}
+rohas-runtime = {{ version = "*" }}
 serde = {{ version = "1.0", features = ["derive"] }}
 serde_json = "1.0"
 tokio = {{ version = "1.0", features = ["full"] }}

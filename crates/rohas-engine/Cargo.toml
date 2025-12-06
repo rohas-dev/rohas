@@ -4,6 +4,8 @@ version = { workspace = true }
 edition = { workspace = true }
 authors = { workspace = true }
 license = { workspace = true }
+description = "Core engine for Rohas event-driven applications, orchestrating handlers and events"
+repository = { workspace = true }
 
 [dependencies]
 rohas-parser = { workspace = true }

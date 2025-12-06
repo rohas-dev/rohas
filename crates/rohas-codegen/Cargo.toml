@@ -4,6 +4,8 @@ version = { workspace = true }
 edition = { workspace = true }
 authors = { workspace = true }
 license = { workspace = true }
+description = "Code generator for Rohas, creating type-safe interfaces and handler stubs"
+repository = { workspace = true }
 
 [dependencies]
 rohas-parser = { workspace = true }
