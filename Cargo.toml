@@ -40,8 +40,8 @@ anyhow = "1.0"
 thiserror = "2.0.17"
 
 # Logging
-tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing = "0.1.43"
+tracing-subscriber = { version = "0.3.22", features = ["env-filter"] }
 
 # CLI
 clap = { version = "4.4", features = ["derive", "cargo"] }
@@ -77,7 +77,7 @@ notify = "8.2.0"
 notify-debouncer-full = "0.6.0"
 
 # UUID
-uuid = { version = "1.6", features = ["v4", "serde"] }
+uuid = { version = "1.19.0", features = ["v4", "serde"] }
 base64 = "0.22"
 
 # System information

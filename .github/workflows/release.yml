@@ -39,6 +39,59 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Get tag name
+        id: tag
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            TAG="${{ github.event.inputs.tag }}"
+          else
+            TAG="${GITHUB_REF#refs/tags/}"
+          fi
+          # Remove 'v' prefix if present
+          VERSION="${TAG#v}"
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Tag: $TAG"
+          echo "Version: $VERSION"
+
+      - name: Update version in Cargo.toml
+        shell: bash
+        env:
+          VERSION: ${{ steps.tag.outputs.version }}
+        run: |
+          if [ -z "$VERSION" ]; then
+            echo "Error: Version is empty"
+            exit 1
+          fi
+          
+          # Use Python for cross-platform compatibility
+          python3 << 'PYTHON_SCRIPT'
+          import re
+          import os
+          
+          version = os.environ['VERSION']
+          
+          with open('Cargo.toml', 'r') as f:
+              content = f.read()
+          
+          # Replace version line
+          content = re.sub(
+              r'^version = ".*"',
+              f'version = "{version}"',
+              content,
+              flags=re.MULTILINE
+          )
+          
+          with open('Cargo.toml', 'w') as f:
+              f.write(content)
+          
+          print(f"Updated Cargo.toml version to {version}")
+          PYTHON_SCRIPT
+          
+          # Verify the change
+          grep "^version = " Cargo.toml
+
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -257,6 +310,145 @@ jobs:
           name: ${{ matrix.artifact_name }}
           path: ${{ env.ARTIFACT_PATH }}
           retention-days: 30
+
+  publish-crates:
+    name: Publish to crates.io
+    needs: build-and-release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Check for CARGO_REGISTRY_TOKEN
+        id: check_token
+        shell: bash
+        run: |
+          if [ -n "${{ secrets.CARGO_REGISTRY_TOKEN }}" ]; then
+            echo "token_exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "token_exists=false" >> $GITHUB_OUTPUT
+            echo "CARGO_REGISTRY_TOKEN is not set, skipping publish"
+          fi
+
+      - name: Get tag name
+        if: steps.check_token.outputs.token_exists == 'true'
+        id: tag
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            TAG="${{ github.event.inputs.tag }}"
+          else
+            TAG="${GITHUB_REF#refs/tags/}"
+          fi
+          # Remove 'v' prefix if present
+          VERSION="${TAG#v}"
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Tag: $TAG"
+          echo "Version: $VERSION"
+
+      - name: Update version in Cargo.toml
+        if: steps.check_token.outputs.token_exists == 'true'
+        shell: bash
+        env:
+          VERSION: ${{ steps.tag.outputs.version }}
+        run: |
+          if [ -z "$VERSION" ]; then
+            echo "Error: Version is empty"
+            exit 1
+          fi
+          
+          # Use Python for cross-platform compatibility
+          python3 << 'PYTHON_SCRIPT'
+          import re
+          import os
+          
+          version = os.environ['VERSION']
+          
+          with open('Cargo.toml', 'r') as f:
+              content = f.read()
+          
+          # Replace version line
+          content = re.sub(
+              r'^version = ".*"',
+              f'version = "{version}"',
+              content,
+              flags=re.MULTILINE
+          )
+          
+          with open('Cargo.toml', 'w') as f:
+              f.write(content)
+          
+          print(f"Updated Cargo.toml version to {version}")
+          PYTHON_SCRIPT
+          
+          # Verify the change
+          grep "^version = " Cargo.toml
+
+      - name: Install Rust
+        if: steps.check_token.outputs.token_exists == 'true'
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Configure Cargo registry token
+        if: steps.check_token.outputs.token_exists == 'true'
+        run: |
+          echo "CARGO_REGISTRY_TOKEN=${{ secrets.CARGO_REGISTRY_TOKEN }}" >> $GITHUB_ENV
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+      - name: Publish to crates.io
+        if: steps.check_token.outputs.token_exists == 'true'
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: |
+          set -e
+          
+          # Function to publish a crate, handling already-published versions gracefully
+          publish_crate() {
+            local crate=$1
+            echo "Publishing $crate..."
+            if cargo publish -p "$crate" --token "$CARGO_REGISTRY_TOKEN" --no-verify 2>&1 | tee /tmp/publish_output.log; then
+              echo "✓ Successfully published $crate"
+            else
+              # Check if the error is due to version already existing
+              if grep -q "already uploaded" /tmp/publish_output.log || grep -q "already exists" /tmp/publish_output.log; then
+                echo "⚠ $crate version already exists on crates.io, skipping"
+              else
+                echo "✗ Failed to publish $crate"
+                exit 1
+              fi
+            fi
+            # Small delay to avoid rate limiting
+            sleep 2
+          }
+          
+          # Publish crates in dependency order
+          # Base crates first
+          publish_crate rohas-parser
+          publish_crate rohas-runtime
+          publish_crate rohas-telemetry
+          
+          # Adapters (can be published in parallel, but do sequentially to avoid rate limits)
+          publish_crate adapter-memory
+          publish_crate adapter-nats
+          publish_crate adapter-kafka
+          publish_crate adapter-rabbitmq
+          publish_crate adapter-aws
+          publish_crate adapter-rocksdb
+          
+          # Codegen and engine (depend on parser/runtime)
+          publish_crate rohas-codegen
+          publish_crate rohas-engine
+          publish_crate rohas-cron
+          
+          # CLI and dev-server (depend on everything)
+          publish_crate rohas-dev-server
+          publish_crate rohas-cli
+          
+          echo "✓ All crates published successfully!"
 
   create-release:
     name: Create Release

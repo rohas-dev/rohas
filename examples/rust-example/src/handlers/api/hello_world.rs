@@ -8,6 +8,6 @@ pub async fn handle_hello_world(
     state: &mut State,
 ) -> Result<HelloWorldResponse> {
     state.logger().info("Hello Worlds");
-    Ok("hello  qqwqwqwsadsd".to_string())
+    Ok("hello  world".to_string())
 }
 
