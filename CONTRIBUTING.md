@@ -153,7 +153,6 @@ Describe testing performed
 
 If you have questions or need help:
 - Open a GitHub issue
-- Join our Discord community
 - Check existing documentation
 
 ## License
