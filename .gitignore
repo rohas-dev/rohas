@@ -29,3 +29,5 @@ workbench/.next
 workbench/out
 workbench/.turbo
 workbench/.vercel
+.rohas
+generated
