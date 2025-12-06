@@ -9,7 +9,7 @@ Build scalable event-driven applications with schema-driven development. Python 
 ## Features
 
 - **Schema-Driven Development** - Define APIs, events, models, and cron jobs using simple schema files
-- **Multi-Runtime Support** - Write handlers in Python (production-ready) or TypeScript/Node.js (experimental)
+- **Multi-Runtime Support** - Write handlers in Python and Rust (production-ready) or TypeScript/Node.js (experimental)
 - **Event Adapters** - Connect to NATS, Kafka, RabbitMQ, SQS, or use in-memory adapters
 - **Code Generation** - Auto-generate type-safe interfaces and handler stubs
 - **Built-in Telemetry** - Integrated tracing, metrics, and logging
@@ -41,6 +41,9 @@ curl -fsSL https://raw.githubusercontent.com/rohas-dev/rohas/main/scripts/build.
 ```bash
 # Python (recommended)
 rohas init my-app --lang python
+
+# Rust (recommended)
+rohas init my-app --lang rust
 
 # TypeScript (experimental)
 rohas init my-app --lang typescript
