@@ -4,7 +4,7 @@ WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
 COMMENT    = _{ "//" ~ (!"\n" ~ ANY)* ~ "\n" | "/*" ~ (!"*/" ~ ANY)* ~ "*/" }
 
 // Top-level schema
-schema = { SOI ~ (model | api | event | cron | input | ws)* ~ EOI }
+schema = { SOI ~ (model | type_def | api | event | cron | input | ws)* ~ EOI }
 
 // Identifiers and literals
 ident   = @{ ASCII_ALPHA ~ (ASCII_ALPHANUMERIC | "_")* }
@@ -58,6 +58,9 @@ cron_property = {
     ("schedule:" ~ string)
   | ("triggers:" ~ trigger_list)
 }
+
+// Type definition (DTO for responses)
+type_def = { "type" ~ ident ~ "{" ~ input_field* ~ "}" }
 
 // Input definition (DTO)
 input       = { "input" ~ ident ~ "{" ~ input_field* ~ "}" }

@@ -1,6 +1,6 @@
 use crate::error::Result;
 use crate::templates;
-use rohas_parser::{Api, Event, FieldType, Model, Schema, WebSocket};
+use rohas_parser::{Api, Event, FieldType, Model, Schema, Type, WebSocket};
 use std::fs;
 use std::path::Path;
 
@@ -91,6 +91,16 @@ pub fn generate_dtos(schema: &Schema, output_dir: &Path) -> Result<()> {
         fs::write(dto_dir.join(file_name), content)?;
     }
 
+    for type_def in &schema.types {
+        let content = generate_model_content(&rohas_parser::Model {
+            name: type_def.name.clone(),
+            fields: type_def.fields.clone(),
+            attributes: vec![],
+        });
+        let file_name = format!("{}.ts", templates::to_snake_case(&type_def.name));
+        fs::write(dto_dir.join(file_name), content)?;
+    }
+
     Ok(())
 }
 
@@ -98,7 +108,7 @@ pub fn generate_apis(schema: &Schema, output_dir: &Path) -> Result<()> {
     let api_dir = output_dir.join("generated/api");
 
     for api in &schema.apis {
-        let content = generate_api_content(api);
+        let content = generate_api_content(api, schema);
         let file_name = format!("{}.ts", templates::to_snake_case(&api.name));
         fs::write(api_dir.join(file_name), content)?;
     }
@@ -117,7 +127,7 @@ pub fn generate_apis(schema: &Schema, output_dir: &Path) -> Result<()> {
     Ok(())
 }
 
-fn generate_api_content(api: &Api) -> String {
+fn generate_api_content(api: &Api, schema: &Schema) -> String {
     let mut content = String::new();
 
     content.push_str("import { z } from 'zod';\n");
@@ -129,12 +139,24 @@ fn generate_api_content(api: &Api) -> String {
     let response_is_primitive = is_primitive_type(&api.response);
 
     if !response_is_primitive {
-        content.push_str(&format!(
-            "import {{ {}, {}Schema }} from '@generated/models/{}';\n",
-            api.response,
-            api.response,
-            templates::to_snake_case(&api.response)
-        ));
+        let is_type = schema.types.iter().any(|t| t.name == api.response);
+        let is_input = schema.inputs.iter().any(|i| i.name == api.response);
+        
+        if is_type || is_input {
+            content.push_str(&format!(
+                "import {{ {}, {}Schema }} from '@generated/dto/{}';\n",
+                api.response,
+                api.response,
+                templates::to_snake_case(&api.response)
+            ));
+        } else {
+            content.push_str(&format!(
+                "import {{ {}, {}Schema }} from '@generated/models/{}';\n",
+                api.response,
+                api.response,
+                templates::to_snake_case(&api.response)
+            ));
+        }
     }
 
     if let Some(body) = &api.body {

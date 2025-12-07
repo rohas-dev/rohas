@@ -31,6 +31,10 @@ impl Parser {
                             let model = Self::parse_model(inner_pair)?;
                             schema.models.push(model);
                         }
+                        Rule::type_def => {
+                            let type_def = Self::parse_type(inner_pair)?;
+                            schema.types.push(type_def);
+                        }
                         Rule::api => {
                             let api = Self::parse_api(inner_pair)?;
                             schema.apis.push(api);
@@ -305,6 +309,46 @@ impl Parser {
             schedule,
             triggers,
         })
+    }
+
+    fn parse_type(pair: pest::iterators::Pair<Rule>) -> Result<Type> {
+        let mut inner = pair.into_inner();
+        let name = inner
+            .next()
+            .ok_or_else(|| ParseError::InvalidModel("Missing type name".into()))?
+            .as_str()
+            .to_string();
+
+        let mut fields = Vec::new();
+
+        for field_pair in inner {
+            if field_pair.as_rule() == Rule::input_field {
+                let mut field_inner = field_pair.into_inner();
+
+                let field_name = field_inner
+                    .next()
+                    .ok_or_else(|| ParseError::InvalidModel("Missing field name".into()))?
+                    .as_str()
+                    .to_string();
+
+                let field_type_pair = field_inner
+                    .next()
+                    .ok_or_else(|| ParseError::InvalidModel("Missing field type".into()))?;
+
+                let field_type = Self::parse_field_type(field_type_pair)?;
+
+                let optional = field_inner.next().is_some();
+
+                fields.push(Field {
+                    name: field_name,
+                    field_type,
+                    optional,
+                    attributes: Vec::new(),
+                });
+            }
+        }
+
+        Ok(Type { name, fields })
     }
 
     fn parse_input(pair: pest::iterators::Pair<Rule>) -> Result<Input> {

@@ -57,6 +57,7 @@ pub fn parse_directory(dir: &PathBuf) -> anyhow::Result<Schema> {
             Ok(schema) => {
                 // Merge schemas
                 combined_schema.models.extend(schema.models);
+                combined_schema.types.extend(schema.types);
                 combined_schema.inputs.extend(schema.inputs);
                 combined_schema.apis.extend(schema.apis);
                 combined_schema.events.extend(schema.events);

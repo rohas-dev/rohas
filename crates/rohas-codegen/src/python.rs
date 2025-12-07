@@ -1,6 +1,6 @@
 use crate::error::Result;
 use crate::templates;
-use rohas_parser::{Api, Event, FieldType, Model, Schema, WebSocket};
+use rohas_parser::{Api, Event, FieldType, Model, Schema, Type, WebSocket};
 use std::fs;
 use std::path::Path;
 
@@ -58,6 +58,16 @@ pub fn generate_dtos(schema: &Schema, output_dir: &Path) -> Result<()> {
         fs::write(dto_dir.join(file_name), content)?;
     }
 
+    for type_def in &schema.types {
+        let content = generate_model_content(&rohas_parser::Model {
+            name: type_def.name.clone(),
+            fields: type_def.fields.clone(),
+            attributes: vec![],
+        });
+        let file_name = format!("{}.py", templates::to_snake_case(&type_def.name));
+        fs::write(dto_dir.join(file_name), content)?;
+    }
+
     Ok(())
 }
 
@@ -65,7 +75,7 @@ pub fn generate_apis(schema: &Schema, output_dir: &Path) -> Result<()> {
     let api_dir = output_dir.join("generated/api");
 
     for api in &schema.apis {
-        let content = generate_api_content(api);
+        let content = generate_api_content(api, schema);
         let file_name = format!("{}.py", templates::to_snake_case(&api.name));
         fs::write(api_dir.join(file_name), content)?;
     }
@@ -114,7 +124,7 @@ fn extract_path_params(path: &str) -> Vec<String> {
     params
 }
 
-fn generate_api_content(api: &Api) -> String {
+fn generate_api_content(api: &Api, schema: &Schema) -> String {
     let mut content = String::new();
 
     content.push_str("from pydantic import BaseModel\n");
@@ -125,11 +135,23 @@ fn generate_api_content(api: &Api) -> String {
 
     let is_custom_type = matches!(response_field_type, FieldType::Custom(_));
     if is_custom_type {
-        content.push_str(&format!(
-            "from ..models.{} import {}\n",
-            templates::to_snake_case(&api.response),
-            api.response
-        ));
+        // Check if it's a type (DTO) or a model
+        let is_type = schema.types.iter().any(|t| t.name == api.response);
+        let is_input = schema.inputs.iter().any(|i| i.name == api.response);
+        
+        if is_type || is_input {
+            content.push_str(&format!(
+                "from ..dto.{} import {}\n",
+                templates::to_snake_case(&api.response),
+                api.response
+            ));
+        } else {
+            content.push_str(&format!(
+                "from ..models.{} import {}\n",
+                templates::to_snake_case(&api.response),
+                api.response
+            ));
+        }
     }
 
     if let Some(body) = &api.body {
