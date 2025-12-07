@@ -9,6 +9,8 @@ members = [
     "crates/rohas-cli",
     "crates/rohas-dev-server",
     "crates/rohas-telemetry",
+    "crates/rohas-orm",
+    "crates/rohas-orm-macros",
     "crates/rohas-adapters/adapter-memory",
     "crates/rohas-adapters/adapter-nats",
     "crates/rohas-adapters/adapter-kafka",
@@ -95,6 +97,8 @@ rohas-engine = { version = "0.1.0", path = "crates/rohas-engine" }
 rohas-cron = { version = "0.1.0", path = "crates/rohas-cron" }
 rohas-cli = { version = "0.1.0", path = "crates/rohas-cli" }
 rohas-dev-server = { version = "0.1.0", path = "crates/rohas-dev-server" }
+rohas-orm = { version = "0.1.0", path = "crates/rohas-orm" }
+rohas-orm-macros = { version = "0.1.0", path = "crates/rohas-orm-macros" }
 adapter-memory = { version = "0.1.0", path = "crates/rohas-adapters/adapter-memory" }
 adapter-nats = { version = "0.1.0", path = "crates/rohas-adapters/adapter-nats" }
 adapter-kafka = { version = "0.1.0", path = "crates/rohas-adapters/adapter-kafka" }

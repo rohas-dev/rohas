@@ -56,7 +56,46 @@ pub struct PythonRuntime {
 
 impl PythonRuntime {
     pub fn new() -> Result<Self> {
-        Python::with_gil(|_| {
+        Python::with_gil(|py| {
+            match py.import("site") {
+                Ok(_) => {
+                    if let Ok(sys) = py.import("sys") {
+                        if let Ok(sys_path) = sys.getattr("path") {
+                            if let Ok(path_list) = sys_path.extract::<Vec<String>>() {
+                                let site_packages_count = path_list.iter()
+                                    .filter(|p| p.contains("site-packages") || p.contains("dist-packages"))
+                                    .count();
+                                let venv_count = path_list.iter()
+                                    .filter(|p| p.contains("venv") || p.contains("conda") || p.contains(".virtualenv"))
+                                    .count();
+                                
+                                if site_packages_count > 0 || venv_count > 0 {
+                                    info!(
+                                        "Python site module loaded - found {} site-packages paths and {} virtual environment paths",
+                                        site_packages_count,
+                                        venv_count
+                                    );
+                                    debug!("Python sys.path after site initialization ({} total entries):", path_list.len());
+                                    for (i, path) in path_list.iter().enumerate() {
+                                        if i < 5 || path.contains("site-packages") || path.contains("venv") || path.contains("conda") {
+                                            debug!("  [{}] {}", i, path);
+                                        }
+                                    }
+                                    if path_list.len() > 5 {
+                                        debug!("  ... and {} more entries", path_list.len() - 5);
+                                    }
+                                } else {
+                                    debug!("Python site module loaded, but no virtual environment detected");
+                                }
+                            }
+                        }
+                    }
+                }
+                Err(e) => {
+                    debug!("Failed to import site module (non-fatal): {}", e);
+                }
+            }
+            
             info!("Python runtime initialized");
         });
 

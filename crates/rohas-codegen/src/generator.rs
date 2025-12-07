@@ -133,7 +133,7 @@ impl Generator {
 
     fn generate_python(&self, schema: &Schema, output_dir: &Path) -> Result<()> {
         python::generate_state(output_dir)?;
-        python::generate_models(schema, output_dir)?;
+        python::generate_models_with_orm(schema, output_dir)?;
         python::generate_dtos(schema, output_dir)?;
         python::generate_apis(schema, output_dir)?;
         python::generate_events(schema, output_dir)?;
@@ -155,8 +155,8 @@ impl Generator {
         info!("Generating Rust code...");
         info!("Generating state...");
         rust::generate_state(output_dir)?;
-        info!("Generating models...");
-        rust::generate_models(schema, output_dir)?;
+        info!("Generating models with ORM support...");
+        rust::generate_models_with_orm(schema, output_dir)?;
         info!("Generating DTOs...");
         rust::generate_dtos(schema, output_dir)?;
         info!("Generating APIs...");

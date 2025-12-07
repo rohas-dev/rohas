@@ -1,0 +1,9 @@
+model Profile {
+  id        Int      @id @auto
+  bio       String?
+  avatar    String?
+  userId    Int      @unique
+  user      User?    @relation(userId)
+  createdAt DateTime @default(now)
+  updatedAt DateTime @default(now)
+}

@@ -114,6 +114,7 @@ requires-python = ">=3.9"
 dependencies = [
     "pydantic>=2.0.0",
     "typing-extensions>=4.0.0",
+    "rohas-orm>=0.1.0",
 ]
 
 [project.optional-dependencies]

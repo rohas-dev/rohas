@@ -1,0 +1,35 @@
+[build-system]
+requires = ["maturin>=1.0,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "rohas-orm"
+version = "0.1.0"
+description = "ORM for Rohas with Rust macros, Python annotations, codegen, and query builder"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT OR Apache-2.0" }
+authors = [
+    { name = "Rohas Contributors" }
+]
+keywords = ["orm", "database", "rohas", "sql", "query-builder"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Rust",
+    "Topic :: Database",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+
+[project.urls]
+Homepage = "https://github.com/rohas-dev/rohas"
+Documentation = "https://rohas.dev/docs"
+Repository = "https://github.com/rohas-dev/rohas"
+Issues = "https://github.com/rohas-dev/rohas/issues"

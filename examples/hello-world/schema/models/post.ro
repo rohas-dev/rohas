@@ -1,0 +1,11 @@
+model Post {
+  id        Int      @id @auto
+  title     String
+  content   String?
+  tests     String?
+  userId    Int
+  author    User?    @relation(userId)  // Many-to-One: Post belongs to one User
+  tags      Tag[]                       // Many-to-Many: Post has many Tags
+  createdAt DateTime @default(now)
+  updatedAt DateTime @default(now)
+}
