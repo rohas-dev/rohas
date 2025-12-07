@@ -1,8 +1,9 @@
 use crate::error::Result;
-use crate::templates;
+use crate::{CodegenError, templates};
 use rohas_parser::{Api, Event, FieldType, Model, Schema, WebSocket};
 use std::fs;
 use std::path::Path;
+use tracing::info;
 
 /// Rust reserved keywords that need to be escaped with r#
 const RUST_RESERVED_KEYWORDS: &[&str] = &[
@@ -38,6 +39,25 @@ pub fn generate_models(schema: &Schema, output_dir: &Path) -> Result<()> {
     }
     fs::write(models_dir.join("mod.rs"), mod_content)?;
 
+    Ok(())
+}
+
+pub fn generate_models_with_orm(schema: &Schema, output_dir: &Path) -> Result<()> {
+    use rohas_orm::codegen::Codegen;
+    use std::collections::HashSet;
+    
+    let models_dir = output_dir.join("generated/models");
+    
+    info!("Generating ORM models from schema...");
+    
+    let mut codegen = Codegen::new(models_dir.clone());
+    
+    codegen.models = schema.models.clone();
+    codegen.model_names = schema.models.iter().map(|m| m.name.clone()).collect::<HashSet<String>>();
+    
+    codegen.generate_rust_models()?;
+    
+    info!("ORM models generated successfully");
     Ok(())
 }
 

@@ -16,6 +16,26 @@ pub fn generate_models(schema: &Schema, output_dir: &Path) -> Result<()> {
     Ok(())
 }
 
+pub fn generate_models_with_orm(schema: &Schema, output_dir: &Path) -> Result<()> {
+    use rohas_orm::codegen::Codegen;
+    use std::collections::HashSet;
+    use tracing::info;
+    
+    let models_dir = output_dir.join("generated/models");
+    
+    info!("Generating ORM models from schema...");
+    
+    let mut codegen = Codegen::new(models_dir.clone());
+    
+    codegen.models = schema.models.clone();
+    codegen.model_names = schema.models.iter().map(|m| m.name.clone()).collect::<HashSet<String>>();
+    
+    codegen.generate_python_models()?;
+    
+    info!("ORM models generated successfully");
+    Ok(())
+}
+
 fn generate_model_content(model: &Model) -> String {
     let mut content = String::new();
 

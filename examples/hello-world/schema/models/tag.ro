@@ -1,0 +1,7 @@
+model Tag {
+  id        Int      @id @auto
+  name      String   @unique
+  posts     Post[]
+  createdAt DateTime @default(now)
+  updatedAt DateTime @default(now)
+}

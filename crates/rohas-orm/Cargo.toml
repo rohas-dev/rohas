@@ -1,0 +1,44 @@
+[package]
+name = "rohas-orm"
+version = { workspace = true }
+edition = { workspace = true }
+authors = { workspace = true }
+license = { workspace = true }
+description = "ORM for Rohas with Rust macros, Python annotations, codegen, and query builder"
+repository = { workspace = true }
+
+[lib]
+name = "rohas_orm"
+crate-type = ["cdylib", "rlib"]
+path = "src/lib.rs"
+
+[dependencies]
+rohas-orm-macros = { version = "0.1.0", path = "../rohas-orm-macros" }
+rohas-parser = { workspace = true }
+
+tokio = { workspace = true }
+futures = { workspace = true }
+
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+
+tracing = { workspace = true }
+
+sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "postgres", "mysql", "sqlite", "chrono", "uuid"] }
+async-trait = "0.1"
+
+pyo3 = { version = "0.27.1", features = ["auto-initialize", "abi3-py310"] }
+
+uuid = { workspace = true }
+
+chrono = { workspace = true }
+
+[dev-dependencies]
+tokio-test = "0.4"
+tracing-subscriber = { workspace = true }
+tempfile = "3.8"
+
+

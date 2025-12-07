@@ -25,3 +25,9 @@ impl From<tera::Error> for CodegenError {
         CodegenError::Template(err.to_string())
     }
 }
+
+impl From<rohas_orm::Error> for CodegenError {
+    fn from(err: rohas_orm::Error) -> Self {
+        CodegenError::GenerationFailed(format!("ORM error: {}", err))
+    }
+}

@@ -1,3 +1,4 @@
+from rohas_orm import connect
 from datetime import datetime
 from generated.state import State
 from generated.models.user import User
@@ -5,7 +6,7 @@ from generated.api.test import TestRequest, TestResponse
 
 async def handle_test(req: TestRequest, state: State) -> TestResponse:
     user = User(id=1, name='John Doe', email='john.doe@example.com', createdAt=datetime.now())
-
+    db = connect("sqlite://:memory:")
     # Explicitly trigger event with custom payload
     state.trigger_event('UserCreated', {
         'id': user.id,
@@ -31,5 +32,13 @@ async def handle_test(req: TestRequest, state: State) -> TestResponse:
     state.logger.warn('Hello, world!')
     state.logger.debug('Hello, world!')
     state.logger.trace('Hello, world!')
+
+    # user = User(id=1, name='John Doe', email='john.doe@example.com', createdAt=datetime.now())
+    # save() is synchronous (blocks internally)
+    user.save(db)
+
+    users = User.find_all(db)
+
+    print(users)
 
     return TestResponse(data="Hello, world!s")

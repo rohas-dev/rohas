@@ -1,0 +1,35 @@
+name: Publish to PyPI
+
+on:
+  release:
+    types: [created]
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        
+      - name: Install maturin
+        uses: PyO3/maturin-action@v1
+        with:
+          manylinux: auto
+          command: build
+          args: --release --out dist
+          
+      - name: Build wheels
+        run: |
+          cd crates/rohas-orm
+          maturin build --release --out dist
+          
+      - name: Publish to PyPI
+        env:
+          MATURIN_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+        run: |
+          cd crates/rohas-orm
+          maturin publish --username __token__ --password $MATURIN_PASSWORD
+

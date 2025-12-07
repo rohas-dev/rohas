@@ -88,7 +88,57 @@ enum Commands {
         schema: PathBuf,
     },
 
+    Db {
+        #[command(subcommand)]
+        command: DbCommands,
+    },
+
     Version,
+}
+
+#[derive(Subcommand)]
+enum DbCommands {
+
+    Init {
+        #[arg(short, long)]
+        url: String,
+
+        #[arg(short, long, default_value = "migrations")]
+        migrations: PathBuf,
+
+        #[arg(short, long)]
+        name: Option<String>,
+
+        #[arg(short, long, default_value = "schema")]
+        schema: Option<PathBuf>,
+    },
+
+    Migrate {
+        #[arg(short, long)]
+        url: String,
+
+        #[arg(short, long, default_value = "migrations")]
+        migrations: PathBuf,
+    },
+
+    Deploy {
+        #[arg(short, long)]
+        url: String,
+
+        #[arg(short, long, default_value = "migrations")]
+        migrations: PathBuf,
+    },
+
+    Revert {
+        #[arg(short, long)]
+        url: String,
+
+        #[arg(short, long, default_value = "migrations")]
+        migrations: PathBuf,
+
+        #[arg(short, long, default_value = "1")]
+        count: u32,
+    },
 }
 
 use std::sync::Arc;
@@ -157,6 +207,22 @@ async fn main() -> anyhow::Result<()> {
         }
         Commands::ListEvents { schema } => {
             commands::list::list_events(schema).await?;
+        }
+        Commands::Db { command } => {
+            match command {
+                DbCommands::Init { url, migrations, name, schema } => {
+                    commands::db::init(url, Some(migrations), name, schema).await?;
+                }
+                DbCommands::Migrate { url, migrations } => {
+                    commands::db::migrate(url, Some(migrations)).await?;
+                }
+                DbCommands::Deploy { url, migrations } => {
+                    commands::db::deploy(url, Some(migrations)).await?;
+                }
+                DbCommands::Revert { url, migrations, count } => {
+                    commands::db::revert(url, Some(migrations), count).await?;
+                }
+            }
         }
         Commands::Version => {
             println!("rohas {}", env!("CARGO_PKG_VERSION"));
