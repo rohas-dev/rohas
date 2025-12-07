@@ -1,4 +1,4 @@
-# Rohas (WIP)
+# Rohas
 
 ![Build Status](https://github.com/rohas-dev/rohas/actions/workflows/build.yml/badge.svg)
 
