@@ -19,22 +19,22 @@ async def auth_middleware(context: Dict[str, Any], state: State) -> Optional[Dic
         Optional[Dict[str, Any]]: Modified context with 'payload' and/or 'query_params' keys,
         or None to pass through unchanged. Return a dict with 'error' key to reject the request.
 
-    To reject the request, raise an exception 
+    To reject the request, raise an exception
     """
     # TODO: Implement middleware logic
     # Example: Validate authentication
     # Example: Rate limiting
     # Example: Logging
     # Example: Modify payload/query_params
-    # 
+    #
     # To modify the request:
     # return {
     #     'payload': modified_payload,
     #     'query_params': modified_query_params
     # }
-    # 
+    #
     # To reject the request:
     # raise Exception('Access denied')
-    
+
     # Pass through unchanged
     return None

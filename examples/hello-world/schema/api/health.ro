@@ -1,4 +1,4 @@
-type HealthResponse {
+type HealthResponseDto {
   status:  String
   timestamp: String
 }
@@ -6,5 +6,5 @@ type HealthResponse {
 api Health {
   method: GET
   path: "/health"
-  response: HealthResponse
+  response: HealthResponseDto
 }
