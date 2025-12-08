@@ -1,6 +1,6 @@
 use crate::error::Result;
 use crate::templates;
-use rohas_parser::{Api, Event, FieldType, Model, Schema, WebSocket};
+use rohas_parser::{Api, Event, FieldType, Model, Schema, Type, WebSocket};
 use std::fs;
 use std::path::Path;
 
@@ -89,12 +89,27 @@ pub fn generate_dtos(schema: &Schema, output_dir: &Path) -> Result<()> {
         fs::write(dto_dir.join(file_name), content)?;
     }
 
+    for type_def in &schema.types {
+        let content = generate_model_content(&rohas_parser::Model {
+            name: type_def.name.clone(),
+            fields: type_def.fields.clone(),
+            attributes: vec![],
+        });
+        let file_name = format!("{}.rs", templates::to_snake_case(&type_def.name));
+        fs::write(dto_dir.join(file_name), content)?;
+    }
+
     let mut mod_content = String::new();
     mod_content.push_str("// Auto-generated module declarations\n");
     for input in &schema.inputs {
         let mod_name = templates::to_snake_case(&input.name);
         mod_content.push_str(&format!("pub mod {};\n", mod_name));
         mod_content.push_str(&format!("pub use {}::{};\n", mod_name, input.name));
+    }
+    for type_def in &schema.types {
+        let mod_name = templates::to_snake_case(&type_def.name);
+        mod_content.push_str(&format!("pub mod {};\n", mod_name));
+        mod_content.push_str(&format!("pub use {}::{};\n", mod_name, type_def.name));
     }
     fs::write(dto_dir.join("mod.rs"), mod_content)?;
 
@@ -105,7 +120,7 @@ pub fn generate_apis(schema: &Schema, output_dir: &Path) -> Result<()> {
     let api_dir = output_dir.join("generated/api");
 
     for api in &schema.apis {
-        let content = generate_api_content(api);
+        let content = generate_api_content(api, schema);
         let file_name = format!("{}.rs", templates::to_snake_case(&api.name));
         fs::write(api_dir.join(file_name), content)?;
     }
@@ -133,7 +148,7 @@ pub fn generate_apis(schema: &Schema, output_dir: &Path) -> Result<()> {
     Ok(())
 }
 
-fn generate_api_content(api: &Api) -> String {
+fn generate_api_content(api: &Api, schema: &Schema) -> String {
     let mut content = String::new();
 
     content.push_str("use serde::{Deserialize, Serialize};\n");
@@ -151,7 +166,15 @@ fn generate_api_content(api: &Api) -> String {
     let is_custom_response = matches!(response_field_type, rohas_parser::FieldType::Custom(_));
     if is_custom_response {
         let response_type_snake = templates::to_snake_case(&api.response);
-        content.push_str(&format!("use crate::generated::models::{}::{};\n", response_type_snake, api.response));
+
+        let is_type = schema.types.iter().any(|t| t.name == api.response);
+        let is_input = schema.inputs.iter().any(|i| i.name == api.response);
+        
+        if is_type || is_input {
+            content.push_str(&format!("use crate::generated::dto::{}::{};\n", response_type_snake, api.response));
+        } else {
+            content.push_str(&format!("use crate::generated::models::{}::{};\n", response_type_snake, api.response));
+        }
     }
     content.push_str("\n");
 

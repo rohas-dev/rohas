@@ -1,6 +1,6 @@
-model HealthResponse {
-  status  String
-  timestamp String
+type HealthResponse {
+  status:  String
+  timestamp: String
 }
 
 api Health {

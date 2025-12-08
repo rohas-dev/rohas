@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Schema {
     pub models: Vec<Model>,
+    pub types: Vec<Type>,
     pub apis: Vec<Api>,
     pub events: Vec<Event>,
     pub crons: Vec<Cron>,
@@ -14,6 +15,7 @@ impl Schema {
     pub fn new() -> Self {
         Self {
             models: Vec::new(),
+            types: Vec::new(),
             apis: Vec::new(),
             events: Vec::new(),
             crons: Vec::new(),
@@ -30,6 +32,15 @@ impl Schema {
                 return Err(crate::ParseError::DuplicateDefinition(format!(
                     "Model '{}'",
                     model.name
+                )));
+            }
+        }
+
+        for type_def in &self.types {
+            if !names.insert(&type_def.name) {
+                return Err(crate::ParseError::DuplicateDefinition(format!(
+                    "Type '{}'",
+                    type_def.name
                 )));
             }
         }
@@ -217,6 +228,12 @@ pub struct Cron {
     pub name: String,
     pub schedule: String,
     pub triggers: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct Type {
+    pub name: String,
+    pub fields: Vec<Field>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

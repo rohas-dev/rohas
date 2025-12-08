@@ -949,6 +949,7 @@ fn parse_directory(dir: &PathBuf) -> anyhow::Result<Schema> {
         match Parser::parse_file(path) {
             Ok(schema) => {
                 combined_schema.models.extend(schema.models);
+                combined_schema.types.extend(schema.types);
                 combined_schema.inputs.extend(schema.inputs);
                 combined_schema.apis.extend(schema.apis);
                 combined_schema.events.extend(schema.events);
