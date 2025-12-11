@@ -1,0 +1,229 @@
+// ============================================================================
+// ONE-TO-ONE RELATION
+// ============================================================================
+// A User has one Profile, and a Profile belongs to one User
+
+model User {
+    id Int @id @auto
+    name String
+    email String @unique
+    
+    // One-to-one: User has one Profile
+    profile Profile? @relation({name: "UserProfile"})
+    
+    // One-to-many: User has many Posts
+    posts Post[] @relation({name: "UserPosts"})
+    
+    // One-to-many: User has many Comments
+    comments Comment[] @relation({name: "UserComments"})
+    
+    createdAt DateTime @default(now)
+    updatedAt DateTime @default(now)
+    
+    @@index([email])
+}
+
+model Profile {
+    id Int @id @auto
+    bio String?
+    avatar String?
+    website String?
+    
+    // Foreign key
+    userId Int @unique
+    
+    // One-to-one: Profile belongs to User
+    user User @relation({
+        name: "UserProfile",
+        fields: [userId],
+        references: [id],
+        onDelete: Cascade,
+        onUpdate: Cascade
+    })
+    
+    createdAt DateTime @default(now)
+    updatedAt DateTime @default(now)
+}
+
+// ============================================================================
+// ONE-TO-MANY / MANY-TO-ONE RELATION
+// ============================================================================
+// A User has many Posts, and a Post belongs to one User
+
+model Post {
+    id Int @id @auto
+    title String
+    content String?
+    published Boolean @default(false)
+    viewCount Int @default(0)
+    
+    // Foreign key
+    userId Int
+    
+    // Many-to-one: Post belongs to User
+    author User @relation({
+        name: "UserPosts",
+        fields: [userId],
+        references: [id],
+        onDelete: Cascade,
+        onUpdate: Cascade
+    })
+    
+    // One-to-many: Post has many Comments
+    comments Comment[] @relation({name: "PostComments"})
+    
+    // Many-to-many: Post has many Tags through PostTag
+    tags Tag[] @relation({
+        name: "PostTags",
+        through: PostTag
+    })
+    
+    // Foreign key for optional category
+    categoryId Int?
+    
+    // Many-to-one: Post belongs to Category (optional)
+    category Category? @relation({
+        name: "CategoryPosts",
+        fields: [categoryId],
+        references: [id],
+        onDelete: SetNull,
+        onUpdate: Cascade
+    })
+    
+    createdAt DateTime @default(now)
+    updatedAt DateTime @default(now)
+    
+    @@index([userId])
+    @@index([categoryId])
+    @@index([published, createdAt])
+}
+
+model Comment {
+    id Int @id @auto
+    content String
+    
+    // Foreign key for post
+    postId Int
+    
+    // Many-to-one: Comment belongs to Post
+    post Post @relation({
+        name: "PostComments",
+        fields: [postId],
+        references: [id],
+        onDelete: Cascade,
+        onUpdate: Cascade
+    })
+    
+    // Foreign key for user
+    userId Int
+    
+    // Many-to-one: Comment belongs to User
+    author User @relation({
+        name: "UserComments",
+        fields: [userId],
+        references: [id],
+        onDelete: Cascade,
+        onUpdate: Cascade
+    })
+    
+    // Self-referential relation for nested comments
+    parentId Int?
+    parent Comment? @relation({
+        name: "CommentReplies",
+        fields: [parentId],
+        references: [id],
+        onDelete: Cascade
+    })
+    replies Comment[] @relation({name: "CommentReplies"})
+    
+    createdAt DateTime @default(now)
+    updatedAt DateTime @default(now)
+    
+    @@index([postId])
+    @@index([userId])
+    @@index([parentId])
+}
+
+// ============================================================================
+// MANY-TO-MANY RELATION
+// ============================================================================
+// Posts and Tags have a many-to-many relationship through PostTag
+
+model Tag {
+    id Int @id @auto
+    name String @unique
+    slug String @unique
+    description String?
+    
+    // Many-to-many: Tag has many Posts through PostTag
+    posts Post[] @relation({
+        name: "PostTags",
+        through: PostTag
+    })
+    
+    createdAt DateTime @default(now)
+    
+    @@index([slug])
+}
+
+model PostTag {
+    id Int @id @auto
+    
+    // Foreign keys
+    postId Int
+    tagId Int
+    
+    // Many-to-one: PostTag belongs to Post
+    post Post @relation({
+        fields: [postId],
+        references: [id],
+        onDelete: Cascade
+    })
+    
+    // Many-to-one: PostTag belongs to Tag
+    tag Tag @relation({
+        fields: [tagId],
+        references: [id],
+        onDelete: Cascade
+    })
+    
+    // Additional metadata on the join table
+    order Int @default(0)
+    
+    createdAt DateTime @default(now)
+    
+    // Composite unique constraint
+    @@unique([postId, tagId])
+    @@index([postId])
+    @@index([tagId])
+}
+
+// ============================================================================
+// OPTIONAL RELATIONS
+// ============================================================================
+
+model Category {
+    id Int @id @auto
+    name String @unique
+    slug String @unique
+    description String?
+    
+    // Optional parent category for hierarchical categories
+    parentId Int?
+    parent Category? @relation({
+        name: "CategoryChildren",
+        fields: [parentId],
+        references: [id],
+        onDelete: SetNull
+    })
+    children Category[] @relation({name: "CategoryChildren"})
+    
+    // One-to-many: Category has many Posts
+    posts Post[] @relation({name: "CategoryPosts"})
+    
+    createdAt DateTime @default(now)
+    updatedAt DateTime @default(now)
+    
+    @@index([slug])
+    @@index([parentId])
+}

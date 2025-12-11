@@ -13,7 +13,7 @@ number  = @{ "-"? ~ ASCII_DIGIT+ }
 boolean = @{ "true" | "false" }
 
 // Model definition
-model = { "model" ~ ident ~ "{" ~ field* ~ "}" }
+model = { "model" ~ ident ~ "{" ~ (field | model_attribute)* ~ "}" }
 
 field        = { ident ~ field_type ~ optional? ~ attribute* }
 field_type   = { ident ~ array_suffix? }
@@ -21,10 +21,24 @@ array_suffix = { "[]" }
 optional     = { "?" }
 
 // Attributes
-attribute     = { "@" ~ ident ~ attr_args? }
-attr_args     = { "(" ~ attr_arg_list? ~ ")" }
-attr_arg_list = { attr_arg ~ ("," ~ attr_arg)* }
-attr_arg      = { ident | string | number | boolean }
+attribute       = { "@" ~ ident ~ attr_args? }
+model_attribute = { "@@" ~ ident ~ attr_args? }
+attr_args       = { "(" ~ attr_arg_list? ~ ")" }
+attr_arg_list   = { attr_arg ~ ("," ~ attr_arg)* }
+attr_arg        = { relation_config | field_list | boolean | number | string | ident }
+
+// Relation configuration for @relation attribute
+relation_config = { "{" ~ relation_prop ~ ("," ~ relation_prop)* ~ ","? ~ "}" }
+relation_prop   = {
+    ("fields:" ~ field_list)
+  | ("references:" ~ field_list)
+  | ("onDelete:" ~ referential_action)
+  | ("onUpdate:" ~ referential_action)
+  | ("name:" ~ string)
+  | ("through:" ~ ident)
+}
+field_list          = { "[" ~ ident ~ ("," ~ ident)* ~ ","? ~ "]" }
+referential_action  = { "Cascade" | "SetNull" | "Restrict" | "NoAction" | "SetDefault" }
 
 // API definition
 api          = { "api" ~ ident ~ "{" ~ api_property* ~ "}" }

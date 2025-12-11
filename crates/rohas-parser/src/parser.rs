@@ -77,17 +77,90 @@ impl Parser {
             .to_string();
 
         let mut fields = Vec::new();
+        let mut attributes = Vec::new();
 
-        for field_pair in inner {
-            if field_pair.as_rule() == Rule::field {
-                fields.push(Self::parse_field(field_pair)?);
+        for item_pair in inner {
+            match item_pair.as_rule() {
+                Rule::field => {
+                    fields.push(Self::parse_field(item_pair)?);
+                }
+                Rule::model_attribute => {
+                    attributes.push(Self::parse_model_attribute(item_pair)?);
+                }
+                _ => {}
             }
         }
 
         Ok(Model {
             name,
             fields,
-            attributes: Vec::new(),
+            attributes,
+        })
+    }
+
+    fn parse_model_attribute(pair: pest::iterators::Pair<Rule>) -> Result<Attribute> {
+        let mut inner = pair.into_inner();
+        let name = inner
+            .next()
+            .ok_or_else(|| ParseError::InvalidAttribute("Missing model attribute name".into()))?
+            .as_str()
+            .to_string();
+
+        let mut args = Vec::new();
+        let mut relation_config = None;
+
+        for arg_pair in inner {
+            if arg_pair.as_rule() == Rule::attr_args {
+                for arg in arg_pair.into_inner() {
+                    if arg.as_rule() == Rule::attr_arg_list {
+                        for item in arg.into_inner() {
+                            match item.as_rule() {
+                                Rule::attr_arg => {
+                                    let mut found_special = false;
+                                    for inner_item in item.clone().into_inner() {
+                                        match inner_item.as_rule() {
+                                            Rule::relation_config => {
+                                                relation_config = Some(Self::parse_relation_config(inner_item)?);
+                                                found_special = true;
+                                                break;
+                                            }
+                                            Rule::field_list => {
+                                                let fields: Vec<String> = inner_item
+                                                    .into_inner()
+                                                    .map(|f| f.as_str().to_string())
+                                                    .collect();
+                                                args.push(format!("[{}]", fields.join(", ")));
+                                                found_special = true;
+                                                break;
+                                            }
+                                            _ => {}
+                                        }
+                                    }
+                                    if !found_special {
+                                        args.push(item.as_str().trim_matches('"').to_string());
+                                    }
+                                }
+                                Rule::field_list => {
+                                    let fields: Vec<String> = item
+                                        .into_inner()
+                                        .map(|f| f.as_str().to_string())
+                                        .collect();
+                                    args.push(format!("[{}]", fields.join(", ")));
+                                }
+                                _ => {
+                                    args.push(item.as_str().trim_matches('"').to_string());
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(Attribute {
+            name,
+            args,
+            relation_config,
         })
     }
 
@@ -153,20 +226,110 @@ impl Parser {
             .to_string();
 
         let mut args = Vec::new();
+        let mut relation_config = None;
 
         for arg_pair in inner {
             if arg_pair.as_rule() == Rule::attr_args {
                 for arg in arg_pair.into_inner() {
                     if arg.as_rule() == Rule::attr_arg_list {
                         for item in arg.into_inner() {
-                            args.push(item.as_str().trim_matches('"').to_string());
+                            match item.as_rule() {
+                                Rule::attr_arg => {
+                                    let mut found_relation = false;
+                                    for inner_item in item.clone().into_inner() {
+                                        if inner_item.as_rule() == Rule::relation_config {
+                                            relation_config = Some(Self::parse_relation_config(inner_item)?);
+                                            found_relation = true;
+                                            break;
+                                        }
+                                    }
+                                    if !found_relation {
+                                        args.push(item.as_str().trim_matches('"').to_string());
+                                    }
+                                }
+                                Rule::relation_config => {
+                                    relation_config = Some(Self::parse_relation_config(item)?);
+                                }
+                                _ => {
+                                    args.push(item.as_str().trim_matches('"').to_string());
+                                }
+                            }
                         }
                     }
                 }
             }
         }
 
-        Ok(Attribute { name, args })
+        Ok(Attribute { 
+            name, 
+            args,
+            relation_config,
+        })
+    }
+
+    fn parse_relation_config(pair: pest::iterators::Pair<Rule>) -> Result<RelationConfig> {
+        let mut fields = None;
+        let mut references = None;
+        let mut on_delete = None;
+        let mut on_update = None;
+        let mut name = None;
+        let mut through = None;
+
+        for prop in pair.into_inner() {
+            if prop.as_rule() == Rule::relation_prop {
+                let prop_text = prop.as_str();
+                let mut prop_inner = prop.into_inner();
+
+                if let Some(value) = prop_inner.next() {
+                    match value.as_rule() {
+                        Rule::field_list => {
+                            let field_names = value
+                                .into_inner()
+                                .map(|f| f.as_str().to_string())
+                                .collect::<Vec<_>>();
+                            
+                            if prop_text.starts_with("fields:") {
+                                fields = Some(field_names);
+                            } else if prop_text.starts_with("references:") {
+                                references = Some(field_names);
+                            }
+                        }
+                        Rule::referential_action => {
+                            let action = ReferentialAction::from_str(value.as_str())
+                                .ok_or_else(|| ParseError::InvalidAttribute(
+                                    format!("Invalid referential action: {}", value.as_str())
+                                ))?;
+                            
+                            if prop_text.starts_with("onDelete:") {
+                                on_delete = Some(action);
+                            } else if prop_text.starts_with("onUpdate:") {
+                                on_update = Some(action);
+                            }
+                        }
+                        Rule::string => {
+                            if prop_text.starts_with("name:") {
+                                name = Some(value.as_str().trim_matches('"').to_string());
+                            }
+                        }
+                        Rule::ident => {
+                            if prop_text.starts_with("through:") {
+                                through = Some(value.as_str().to_string());
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+
+        Ok(RelationConfig {
+            fields,
+            references,
+            on_delete,
+            on_update,
+            name,
+            through,
+        })
     }
 
     fn parse_api(pair: pest::iterators::Pair<Rule>) -> Result<Api> {

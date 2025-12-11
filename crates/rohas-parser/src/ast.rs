@@ -161,11 +161,68 @@ impl FieldType {
     }
 }
 
-/// Attribute (e.g., @id, @unique, @default)
+/// Attribute (e.g., @id, @unique, @default, @relation)
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Attribute {
     pub name: String,
     pub args: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub relation_config: Option<RelationConfig>,
+}
+
+/// Relation configuration for @relation attribute
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct RelationConfig {
+    /// Foreign key field(s) in the current model
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fields: Option<Vec<String>>,
+    /// Referenced field(s) in the related model
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub references: Option<Vec<String>>,
+    /// Action on delete: Cascade, SetNull, Restrict, NoAction, SetDefault
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub on_delete: Option<ReferentialAction>,
+    /// Action on update: Cascade, SetNull, Restrict, NoAction, SetDefault
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub on_update: Option<ReferentialAction>,
+    /// Name for the relation (for many-to-many)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    /// For many-to-many: the join table name
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub through: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum ReferentialAction {
+    Cascade,
+    SetNull,
+    Restrict,
+    NoAction,
+    SetDefault,
+}
+
+impl ReferentialAction {
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s.to_lowercase().as_str() {
+            "cascade" => Some(ReferentialAction::Cascade),
+            "setnull" => Some(ReferentialAction::SetNull),
+            "restrict" => Some(ReferentialAction::Restrict),
+            "noaction" => Some(ReferentialAction::NoAction),
+            "setdefault" => Some(ReferentialAction::SetDefault),
+            _ => None,
+        }
+    }
+    
+    pub fn to_sql(&self) -> &str {
+        match self {
+            ReferentialAction::Cascade => "CASCADE",
+            ReferentialAction::SetNull => "SET NULL",
+            ReferentialAction::Restrict => "RESTRICT",
+            ReferentialAction::NoAction => "NO ACTION",
+            ReferentialAction::SetDefault => "SET DEFAULT",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
