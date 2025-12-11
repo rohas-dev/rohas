@@ -1,0 +1,4 @@
+cron SyncInventory {
+ schedule: "0 */6 * * *"
+ triggers: [InventoryLowStock, InventoryOutOfStock]
+}

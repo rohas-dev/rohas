@@ -1,0 +1,31 @@
+event OrderCreated {
+  payload: Json
+  handler: [process_payment, reserve_inventory]
+  type: sqs
+}
+
+event OrderCancelled {
+  payload: Json
+  handler: [release_inventory, refund_payment, send_cancellation_notification]
+  type: sqs
+}
+
+event OrderStatusUpdated {
+  payload: Json
+  handler: [send_status_notification]
+}
+
+event OrderExpired {
+  payload: Json
+  handler: [release_inventory, send_expiration_notification]
+}
+
+event OrderShipped {
+  payload: Json
+  handler: [send_shipping_notification, update_tracking]
+}
+
+event OrderDelivered {
+  payload: Json
+  handler: [send_delivery_notification, complete_order]
+}

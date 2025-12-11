@@ -1,0 +1,10 @@
+model Payment {
+  id            String   @id
+  orderId       Int
+  amount        Float
+  method        String   // credit_card, paypal, bank_transfer
+  status        String   // pending, processing, completed, failed, refunded
+  transactionId String?
+  createdAt     DateTime @default(now)
+  completedAt   DateTime?
+}

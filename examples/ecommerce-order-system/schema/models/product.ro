@@ -1,0 +1,9 @@
+model Product {
+  id          Int     @id
+  name        String
+  description String
+  price       Float
+  stock       Int
+  sku         String  @unique
+  category    String
+}

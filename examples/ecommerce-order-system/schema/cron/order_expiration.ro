@@ -1,0 +1,4 @@
+cron ExpirePendingOrders {
+ schedule: "*/5 * * * *"
+ triggers: [OrderExpired]
+}

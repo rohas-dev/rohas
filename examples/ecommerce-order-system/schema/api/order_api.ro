@@ -1,0 +1,56 @@
+input OrderItemInput {
+  productId: Int
+  quantity: Int
+}
+
+input CreateOrderInput {
+  customerId: Int
+  items: OrderItemInput[]
+  shippingAddress: String
+}
+
+api CreateOrder {
+  method: POST
+  path: "/orders"
+  body: CreateOrderInput
+  response: Order
+  triggers: [OrderCreated]
+  middlewares: [auth, rate_limit, request_logging]
+}
+
+input GetOrderStatusInput {
+  orderId: Int
+}
+
+api GetOrderStatus {
+  method: GET
+  path: "/orders/:orderId"
+  response: Order
+  middlewares: [auth, request_logging]
+}
+
+input CancelOrderInput {
+  orderId: Int
+  reason: String?
+}
+
+api CancelOrder {
+  method: POST
+  path: "/orders/:orderId/cancel"
+  body: CancelOrderInput
+  response: Order
+  triggers: [OrderCancelled]
+  middlewares: [auth, request_logging]
+}
+
+type OrderList {
+  orders: Order[]
+  total: Int
+}
+
+api ListOrders {
+  method: GET
+  path: "/orders"
+  response: OrderList
+  middlewares: [auth, request_logging]
+}

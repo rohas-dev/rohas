@@ -1,0 +1,14 @@
+input OrderUpdateMessage {
+  type: String  // subscribe, unsubscribe
+  orderId: Int?
+}
+
+ws OrderUpdates {
+  path: "/ws/orders"
+  message: OrderUpdateMessage
+  onConnect: [on_connect_handler]
+  onMessage: [on_message_handler]
+  onDisconnect: [on_disconnect_handler]
+  broadcast: true
+  middlewares: [auth]
+}

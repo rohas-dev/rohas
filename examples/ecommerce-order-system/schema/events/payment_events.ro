@@ -1,0 +1,22 @@
+event PaymentProcessed {
+  payload: Json
+  handler: [update_order_payment_status, payment_completed]
+  type: sqs
+}
+
+event PaymentCompleted {
+  payload: Json
+  handler: [create_shipment, send_payment_confirmation]
+  type: sqs
+}
+
+event PaymentFailed {
+  payload: Json
+  handler: [handle_payment_failure, send_payment_failure_notification]
+  type: sqs
+}
+
+event PaymentRefunded {
+  payload: Json
+  handler: [update_order_status, send_refund_notification]
+}

@@ -1,0 +1,26 @@
+[project]
+name = "ecommerce-order-system"
+version = "0.1.0"
+language = "python"
+
+[server]
+host = "127.0.0.1"
+port = 4401
+enable_cors = true
+
+[adapter]
+type = "memory"
+buffer_size = 10000
+
+[telemetry]
+type = "rocksdb"
+path = ".rohas/telemetry"
+retention_days = 30
+max_cache_size = 1000
+enable_metrics = true
+enable_logs = true
+enable_traces = true
+
+[workbench]
+allowed_origins = []
+api_key = "FRmz/+AjTYCUFlBMio479A=="

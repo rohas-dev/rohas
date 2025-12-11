@@ -1,0 +1,8 @@
+model Customer {
+  id        Int      @id
+  email     String   @unique
+  name      String
+  address   String
+  phone     String?
+  createdAt DateTime @default(now)
+}

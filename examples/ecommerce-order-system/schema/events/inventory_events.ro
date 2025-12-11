@@ -1,0 +1,19 @@
+event InventoryReserved {
+  payload: Json
+  handler: [log_inventory_reservation]
+}
+
+event InventoryReleased {
+  payload: Json
+  handler: [log_inventory_release]
+}
+
+event InventoryLowStock {
+  payload: Json
+  handler: [send_low_stock_alert, trigger_reorder]
+}
+
+event InventoryOutOfStock {
+  payload: Json
+  handler: [send_out_of_stock_alert, cancel_pending_orders]
+}
